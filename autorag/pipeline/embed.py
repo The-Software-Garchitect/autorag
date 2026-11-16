@@ -47,6 +47,32 @@ class HashingEmbedder:
         return self.embed_documents([text])[0]
 
 
+class FastEmbedEmbedder:
+    """ONNX MiniLM via fastembed. Same model family as the local PyTorch embedder, without torch.
+
+    This is the runtime used by the free-host image. ``model`` can be injected in tests.
+    """
+
+    def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2", model=None):
+        self.model_name = model_name
+        self.name = f"fastembed:{model_name}"
+        if model is not None:
+            self._model = model
+        else:
+            from fastembed import TextEmbedding
+
+            self._model = TextEmbedding(model_name)
+
+    def embed_documents(self, texts: list[str]) -> np.ndarray:
+        if not texts:
+            return np.zeros((0, 384), dtype=np.float32)
+        vectors = np.asarray(list(self._model.embed(list(texts))), dtype=np.float32)
+        return _normalize_rows(vectors)
+
+    def embed_query(self, text: str) -> np.ndarray:
+        return self.embed_documents([text])[0]
+
+
 class SentenceTransformerEmbedder:
     def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
         self.model_name = model_name
@@ -144,6 +170,8 @@ def build_embedder(provider: str, model_name: str) -> Embedder:
         return OpenAIEmbedder(model=model_name if model_name.startswith("text-embedding") else None)
     if provider == "ollama":
         return OllamaEmbedder(model=model_name or None)
+    if provider == "fastembed":
+        return FastEmbedEmbedder(model_name or "sentence-transformers/all-MiniLM-L6-v2")
     if provider == "local":
         return SentenceTransformerEmbedder(model_name)
     raise ValueError(f"Unknown embedding provider: {provider}")

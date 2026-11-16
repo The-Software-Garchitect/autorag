@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from autorag.config import PipelineConfig, baseline_config, default_config
 from autorag.pipeline.embed import build_embedder
-from autorag.pipeline.engine import Bundle, build_bundle
+from autorag.pipeline.engine import Bundle, build_bundle, load_precomputed_bundle
 from autorag.pipeline.generate import resolve_generator
 from autorag.pipeline.ingest import load_corpus
 from autorag.tune.feedback import FeedbackStore
@@ -71,11 +71,36 @@ class HandbookService:
             if override:
                 self.best_config.generator = override
                 self.baseline_config.generator = override
-            self._bundle(self.best_config)
+            if os.environ.get("AUTORAG_RUNTIME") == "lite":
+                self._warmup_lite()
+            else:
+                self._bundle(self.best_config)
             self.ready = True
         except Exception as exc:  # surface the message to /health
             self.error = str(exc)
             self.ready = False
+
+    def _warmup_lite(self) -> None:
+        """Load saved passage vectors and embed only the question.
+
+        The free-host image has no PyTorch. Document vectors were built ahead of
+        time with the ONNX MiniLM; startup just reads those files.
+        """
+        model = os.environ.get("AUTORAG_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+        for config in (self.best_config, self.baseline_config):
+            config.embedding_provider = "fastembed"
+            config.embedding_model = model
+        embedder = build_embedder("fastembed", model)
+        self._embedders[("fastembed", model)] = embedder
+        index_root = Path(self.source) / "index"
+        for config in (self.best_config, self.baseline_config):
+            directory = index_root / config.name
+            if not (directory / "vectors.npy").exists():
+                raise RuntimeError(
+                    f"Lite runtime needs a saved index at {directory}. "
+                    "Run `python scripts/precompute_index.py` and rebuild the image."
+                )
+            self._bundles[config.index_key()] = load_precomputed_bundle(directory, config, embedder)
 
     def ask(self, question: str, variant: str = "best"):
         if self.error:
@@ -160,10 +185,11 @@ def create_app(source: str = "data/acme", runs_dir: str = "runs") -> FastAPI:
 
     @app.get("/health")
     def health():
+        # 200 while the index is still loading so a free host does not kill the process.
         if service.error:
             return JSONResponse({"status": "error", "detail": service.error}, status_code=500)
         if not service.ready:
-            return JSONResponse({"status": "loading", "documents": 0}, status_code=503)
+            return {"status": "loading", "documents": 0}
         return {
             "status": "ok",
             "documents": len(service.docs),

@@ -12,13 +12,16 @@ dependencies = [
   "numpy>=1.26",
   "pydantic>=2",
   "pyyaml>=6",
-  "sentence-transformers>=3",
   "httpx>=0.27",
   "pypdf>=5",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.8"]
+# PyTorch MiniLM. Used to tune. Too large for a 512 MB free host.
+local = ["sentence-transformers>=3"]
+# ONNX MiniLM. Used by the demo container and the free-host image.
+lite = ["fastembed>=0.4"]
 chroma = ["chromadb>=0.5"]
 
 [project.scripts]
@@ -37,3 +40,11 @@ autorag = ["service/static/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]

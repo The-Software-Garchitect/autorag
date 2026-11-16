@@ -1,21 +1,28 @@
-.PHONY: install data test tune serve up report
+.PHONY: install data test tune serve up report index lint
 
 PORT ?= 8091
+PYTHON ?= python3
 
 install:
-	python -m pip install -e ".[dev]"
+	$(PYTHON) -m pip install -e ".[dev,local,lite]"
 
 data:
-	python scripts/generate_dataset.py
+	$(PYTHON) scripts/generate_dataset.py
+
+index:
+	$(PYTHON) scripts/precompute_index.py
+
+lint:
+	ruff check autorag tests scripts
 
 test:
-	python -m pytest
+	$(PYTHON) -m pytest
 
 tune:
-	python -m autorag tune --source data/acme
+	$(PYTHON) -m autorag tune --source data/acme
 
 serve:
-	python -m autorag serve --source data/acme --host 0.0.0.0 --port $(PORT)
+	$(PYTHON) -m autorag serve --source data/acme --host 0.0.0.0 --port $(PORT)
 
 up:
 	docker compose up --build

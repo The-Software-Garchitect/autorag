@@ -19,12 +19,12 @@ function setStatus(text, kind) {
 async function pollHealth() {
   try {
     const response = await fetch("/health");
-    if (response.status === 503) {
+    const body = await response.json();
+    if (response.status === 503 || body.status === "loading") {
       setStatus("Indexing the handbook…");
       setTimeout(pollHealth, 700);
       return;
     }
-    const body = await response.json();
     if (!response.ok) {
       setStatus(body.detail || "The handbook failed to index.", "error");
       return;

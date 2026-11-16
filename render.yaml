@@ -1,0 +1,18 @@
+# Free web service: 0.1 CPU, 512 MB RAM. The image does not install PyTorch.
+# Sync this Blueprint from the Render Dashboard, or with the Render CLI.
+services:
+  - type: web
+    name: autorag-handbook
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: AUTORAG_RUNTIME
+        value: lite
+      - key: AUTORAG_GENERATOR
+        value: extractive
+      - key: PYTHONUNBUFFERED
+        value: "1"

@@ -12,7 +12,7 @@ from autorag.models import Answer, Chunk, Document
 from autorag.pipeline.chunk import chunk_documents
 from autorag.pipeline.embed import Embedder, build_embedder
 from autorag.pipeline.generate import generate
-from autorag.pipeline.index import build_vector_index
+from autorag.pipeline.index import VectorIndex, build_vector_index
 from autorag.pipeline.retrieve import BM25Index, build_bm25, retrieve
 
 
@@ -47,6 +47,21 @@ class Bundle:
             answers.append(generate(question, retrieved, self.config, mode=mode))
             retrieved_sets.append(retrieved)
         return answers, retrieved_sets
+
+
+def bundle_from_index(config: PipelineConfig, index: VectorIndex, embedder: Embedder) -> Bundle:
+    """Wrap a saved index. Queries are still embedded; the passages are not."""
+    return Bundle(
+        config=config,
+        chunks=index.chunks,
+        vectors=index.vectors,
+        bm25=build_bm25(index.chunks),
+        embedder=embedder,
+    )
+
+
+def load_precomputed_bundle(directory: str | os.PathLike, config: PipelineConfig, embedder: Embedder) -> Bundle:
+    return bundle_from_index(config, VectorIndex.load(directory), embedder)
 
 
 def build_bundle(documents: list[Document], config: PipelineConfig, embedder: Embedder | None = None) -> Bundle:

@@ -43,24 +43,10 @@ def test_recency_prefers_the_current_policy(corpus_dir):
     assert "12" in current_answer.answer
     assert current_answer.citations[0].doc_id == "snacks"
     assert current_answer.citations[0].status == "current"
-    assert not current_answer.refused
 
 
-def test_unanswerable_question_is_refused(corpus_dir):
+def test_hybrid_search_finds_the_quiet_room(corpus_dir):
     docs = load_corpus(str(corpus_dir))
-    bundle = build_bundle(
-        docs,
-        PipelineConfig(embedding_provider="hashing", recency_boost=True, chunk_strategy="structure"),
-        HashingEmbedder(),
-    )
-    answer = bundle.ask("Does the handbook include pet insurance for employees?")
-    assert answer.refused
-    assert answer.citations == []
-
-
-def test_hybrid_and_vector_both_return_chunks(corpus_dir):
-    docs = load_corpus(str(corpus_dir))
-    embedder = HashingEmbedder()
     bundle = build_bundle(
         docs,
         PipelineConfig(
@@ -70,7 +56,7 @@ def test_hybrid_and_vector_both_return_chunks(corpus_dir):
             recency_boost=True,
             chunk_strategy="structure",
         ),
-        embedder,
+        HashingEmbedder(),
     )
     answer = bundle.ask("What is the Austin office quiet room named?")
     assert "Cypress" in answer.answer

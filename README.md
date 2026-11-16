@@ -1,26 +1,24 @@
+---
+title: Acme Handbook
+emoji: 📗
+colorFrom: green
+colorTo: yellow
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # AutoRAG
 
-AutoRAG turns a folder of documents into a question-answering API that cites its sources, then **tunes itself**. You point it at a handbook. It cuts the pages into passages, searches them, answers with a quote and a citation, grades itself against known questions, and keeps a new setup only when the score actually goes up.
+AutoRAG reads a folder of company documents and answers questions by quoting the page the answer came from. It also tries several ways of cutting up and searching those pages, scores each way against questions it already knows the answer to, and keeps a new way only when the score goes up. The example is Acme, a made-up company, so you can ask ordinary things: how many vacation days you get after three years, what you can spend on a client dinner, and how to request parental leave.
 
-The worked example is **Acme Co**, a fictional company of about 420 people. The questions are the ones a new hire would ask:
+![The handbook answering how many PTO days someone gets after three years. The tuned answer says 22. The untuned answer says 25.](docs/demo.png)
 
-- How many PTO days after 3 years?
-- What's the client dinner expense limit?
-- How do I request parental leave?
+![Clicking a suggested question, reading the quoted answer, and comparing it with the untuned setup.](docs/demo.gif)
 
-An older 2023 PTO policy is still in the folder and disagrees with the 2025 one. A Slack export repeats the old number. The tuner has to prefer the current page.
+## What this is
 
-## What “RAG” means here
-
-A language model does not have your handbook in its head. Retrieval-augmented generation (RAG) does this instead:
-
-1. **Find** the few passages that might contain the answer.
-2. **Answer** using only those passages, and show them.
-3. **Refuse** when the passages do not cover the question.
-
-The hard part is step 1. Cut the pages too small and a table loses its column headers. Cut them too big and the search returns a whole chapter. Return the old policy and the answer is confidently wrong. AutoRAG searches those choices and measures them.
-
-## Architecture
+A language model does not have your handbook memorized. The usual fix is to search the handbook first and only then write an answer. That search is easy to get wrong: cut a page in the wrong place and a table loses its headers, or an old policy outranks the current one. AutoRAG is that search, plus a loop that measures whether a change helped.
 
 ```mermaid
 flowchart LR
@@ -35,7 +33,8 @@ flowchart LR
   Embed --> Index[Local vector index + BM25]
   Question[Question] --> Retrieve[Retrieve]
   Index --> Retrieve
-  Retrieve --> Generate[Generate with citations]
+  Retrieve --> Rerank[Rerank]
+  Rerank --> Generate[Generate with citations]
   Generate --> Answer[Answer or refusal]
   Answer --> Feedback[Thumbs up / down]
   Feedback --> Eval[Eval set]
@@ -44,142 +43,31 @@ flowchart LR
   Tune -->|promote only if better| Index
 ```
 
-Each box is a module under `autorag/`.
+## How it works
 
-| Stage | Module | In plain language | In the code |
-| --- | --- | --- | --- |
-| Ingest | `pipeline/ingest.py` | Read the files and keep a title, a date, and whether the page is current. | `LocalFolderLoader` for Markdown, text, and PDF. `NotionLoader` and `GoogleDriveLoader` share the same `load()` shape and raise a clear error until a client is plugged in. `UrlLoader` fetches a page. |
-| Chunk | `pipeline/chunk.py` | Cut each document into pieces the search can handle. | `fixed` is a word window and will slice through a table. `structure` splits on headings and keeps each markdown table in one piece, header included. |
-| Embed | `pipeline/embed.py` | Turn text into a list of numbers so “PTO” and “paid time off” can match. | Default is `sentence-transformers/all-MiniLM-L6-v2` on CPU. Set `OPENAI_API_KEY` to use OpenAI embeddings. Tests use a hashing embedder so they need no download. |
-| Index | `pipeline/index.py` | Store those numbers and find the nearest ones. | In-process numpy index, saved as `vectors.npy`. Optional Chroma backend: `pip install 'autorag[chroma]'` and `AUTORAG_INDEX=chroma`. |
-| Retrieve | `pipeline/retrieve.py` | Pick a handful of passages. | Vector search, optional BM25 (keyword search) mixed in with reciprocal rank fusion, an optional reranker, and a penalty for superseded or unofficial pages. |
-| Generate | `pipeline/generate.py` | Write the answer from those passages only. | Default is extractive: it quotes the matching sentence or table row, so it cannot invent a number. Ollama or OpenAI will write the sentence instead when you ask them to. |
-| Eval | `eval/` | Grade the answer. | Gold questions in JSONL, or synthetic questions when you have none. |
-| Tune | `tune/loop.py` | Try several setups. Keep one only if it scores higher. | History in `runs/autorag.sqlite` and `data/acme/tune_results.json`. |
+**Ingest.** Read the folder. Markdown, text, and PDF come in today. Each file can say whether it is current, out of date, a duplicate, or an unofficial dump like a Slack export. Notion, Google Drive, and a web page use the same “give me documents” shape. Drive and Notion stop with a clear message until someone plugs in a client. A single web page can be fetched now.
 
-## Acme handbook
+**Chunk.** Cut each document into pieces small enough to search. The blunt way is a window of words, which will slice through the middle of a table. The careful way splits on headings, keeps a heading with its paragraphs, and keeps a whole table together so the column names stay attached to the numbers.
 
-`scripts/generate_dataset.py` is the source of truth. It writes the markdown and the questions from the same sentences, so a number in the eval set is the number in the policy. The generated files are committed, so the repo works offline.
+**Embed.** Turn each piece, and later each question, into a list of numbers so that “vacation” can land near “PTO” even when the words differ. The measured run used a small model called MiniLM, on your machine, with no API key. The demo container uses the same model in a smaller ONNX build so it does not need PyTorch.
 
-```bash
-python scripts/generate_dataset.py
-```
+**Index.** Store those numbers and, alongside them, a keyword index. Looking up a question is then “which stored pieces are closest?” The default store is a file of numbers in the repo. Chroma is optional if you want that instead.
 
-The folder `data/acme/docs/` has 51 pages: PTO, sick leave, parental leave, holidays, remote work, benefits tables, expense limits, per diem by city, laptops, VPN, a first-week checklist, offices, and contacts. Deliberate mess:
+**Retrieve.** Take the question’s numbers and return the closest pieces. Keyword search can be mixed in, which helps when the important part is a hostname or a dollar amount rather than a paraphrase. Pages marked superseded or unofficial can be pushed down so last year’s policy does not beat this year’s.
 
-- `hr/pto-policy-2023.md` is **superseded** and still says 16 PTO days after 3 years. The 2025 policy says 22.
-- `exports/slack-ask-hr.md` and `exports/slack-ask-it.md` are unofficial Slack dumps. People in them repeat the old numbers and a retired VPN hostname.
-- Pocket-card and “IT copy” pages are **duplicates** of the canonical policy.
+**Rerank.** Look again at that short list and reorder it. The built-in reranker prefers the passage that actually contains the words in the question. A heavier cross-encoder model is optional. On this handbook the heavier step did not beat the simpler mix, so it was not kept.
 
-`data/acme/eval.jsonl` has **623** graded questions: factual, table lookups, multi-document, conflicting versions, and questions the handbook cannot answer (pet insurance, the CEO’s home address). Those last ones should be refused.
+**Generate, with citations.** Write the answer from those passages only. The default copies the matching sentence or table row and names the page. If the passages do not cover the question, it says so instead of guessing. Ollama or OpenAI can write the sentence instead, using the same passages, when you turn them on.
 
-## Quickstart
+**Evaluate.** Grade the answer against questions whose right answer and source pages are already known. Some of those questions are supposed to be refused. If a folder has no graded file, the tool writes starter questions from the documents. Those are a smoke test. Read them before you trust the score.
 
-Python 3.11+. The first run downloads the MiniLM embedding model (about 90 MB). No API key.
+**Tune and promote.** Run the same questions through several setups: how the pages are cut, how many pieces come back, whether keyword search is on, whether old pages are penalized. Save every result. Replace the setup the API serves only when the new score is strictly higher.
 
-```bash
-python -m pip install -e ".[dev]"
-python -m pytest
-python -m autorag tune --source data/acme
-python -m autorag serve --source data/acme --host 0.0.0.0 --port 8091
-```
+**Feedback.** Thumbs up and thumbs down are stored. The next tune treats a thumbs-up as another graded question, a thumbs-down with a correction as the corrected answer, and a thumbs-down with no correction as a failure if the program repeats the rejected reply. Clicking the button does not re-tune by itself. Someone still runs the tune.
 
-Or: `make install`, `make test`, `make tune`, `make serve`.
+## Results
 
-Open [http://127.0.0.1:8091](http://127.0.0.1:8091). The page has suggested questions, a free-text box, citations, helpful / not helpful, a comparison against the untuned baseline, and the tuning chart.
-
-Docker, same port:
-
-```bash
-docker compose up --build
-```
-
-The image installs CPU PyTorch so it does not pull the CUDA wheel. `docker compose --profile ollama up` also starts [Ollama](https://ollama.com). Set `AUTORAG_GENERATOR=ollama` and `OLLAMA_MODEL` when you want a local chat model to write the replies. Without that, answers are quotations from the handbook.
-
-Useful commands:
-
-```bash
-python -m autorag ask "How many PTO days after 3 years?" --source data/acme
-python -m autorag ask "How many PTO days after 3 years?" --variant baseline
-python -m autorag eval --source data/acme
-python -m autorag synth --source ./our-docs --out ./our-docs/eval.synthetic.jsonl
-python -m autorag synth --source ./our-docs --out ./our-docs/eval.llm.jsonl --llm
-```
-
-`--llm` asks OpenAI or a running Ollama to write the questions. With neither available, the heuristic writer turns concrete sentences into questions and says so.
-
-## Point it at your own documents
-
-Put Markdown, text, or PDF files in a folder. A YAML front matter block is optional and useful:
-
-```yaml
----
-id: travel-policy
-title: Travel Policy
-status: current          # current | superseded | unofficial | duplicate
-effective_date: 2025-01-01
-department: Finance
----
-```
-
-Then:
-
-```bash
-python -m autorag tune --source ~/Documents/handbook
-python -m autorag serve --source ~/Documents/handbook --port 8091
-```
-
-If `eval.jsonl` is missing, `tune` writes a synthetic set next to the files and scores against that. Read it before you trust the score. A synthetic question only checks “can we quote this passage back,” which is a start, not a substitute for questions a person actually asks.
-
-Copy `.env.example` to `.env` if you add a paid model. Nothing in the repo reads a key that you did not set.
-
-| Variable | Role |
-| --- | --- |
-| `OPENAI_API_KEY` | Chat and embeddings, when the generator or embedder is `openai`. |
-| `OPENAI_MODEL` | Default `gpt-4o-mini`. |
-| `OLLAMA_HOST` | Default `http://127.0.0.1:11434`. |
-| `OLLAMA_MODEL` | Default `llama3.2`. |
-| `AUTORAG_GENERATOR` | `extractive` (default here), `ollama`, `openai`, or `auto`. |
-| `AUTORAG_INDEX` | `local` (default) or `chroma`. |
-
-`auto` uses OpenAI if a key is set, otherwise Ollama if it answers on `/api/tags`, otherwise the extractive quoter.
-
-## How tuning decides
-
-`autorag tune` runs seven configs. The first is a weak baseline: 80-word windows, two passages, vector search only, no preference for current documents. Later configs turn on structure-aware chunks, keyword search, a lexical reranker, a larger window, or a higher `top_k`.
-
-Every question is scored. The composite is:
-
-| Piece | Weight | What it measures |
-| --- | --- | --- |
-| Answer correctness | 0.34 | For a graded question, a mix of “the reply contains the gold wording” (token recall, weight 0.38) and “the reply contains the gold numbers and not a pile of other numbers” (number F1, weight 0.62). Unanswerable questions score 1 only on a refusal. A thumbs-down with no correction scores 1 when the pipeline stops repeating the rejected answer. |
-| Faithfulness | 0.10 | Share of the answer’s content words that appear in the retrieved passages. A refusal adds no claim, so it scores 1. |
-| Context recall | 0.18 | Fraction of the gold source documents that showed up in the retrieved set. |
-| Context precision | 0.08 | Fraction of retrieved documents that were actually on the gold list. |
-| Hit rate | 0.15 | Fraction of answerable questions with at least one gold document retrieved. |
-| MRR | 0.15 | How high the first gold document was ranked. |
-
-These are the same *ideas* as [Ragas](https://docs.ragas.io) (faithfulness, answer correctness, context precision, context recall), computed locally from the text. Ragas normally asks a second model to judge. This project does not, because the loop has to finish with no API key. The numbers below are from that local scorer, on all 623 Acme questions, with `sentence-transformers/all-MiniLM-L6-v2` and the extractive generator.
-
-A config is **promoted** only when its composite is strictly higher than the best so far. Tied and worse runs are stored and not served.
-
-Feedback (`POST /feedback`, or the buttons on the demo) is stored in `runs/autorag.sqlite`. The next `autorag tune` folds it in:
-
-- Thumbs up becomes a graded question whose answer is the one the person liked.
-- Thumbs down with a correction becomes a graded question using the correction.
-- Thumbs down without a correction counts as a miss if the pipeline repeats that answer.
-
-Optional: `autorag tune --source data/acme --finetune` fine-tunes MiniLM on (question, gold passage) pairs with in-batch negatives and scores that model as one more config. It is off by default. It needs the gold set.
-
-Schedule a re-run with GitHub Actions (`.github/workflows/autorag.yml` runs tests on every push and tunes on Monday at 06:15 UTC) or cron:
-
-```cron
-15 6 * * 1  cd /opt/autorag && python -m autorag tune --source data/acme >> /var/log/autorag-tune.log 2>&1
-```
-
-## Results from the Acme tune
-
-Run locally with the free embedding model and the extractive generator. 51 documents, 623 questions, seven configs. Source file: `data/acme/tune_results.json`.
+These numbers are copied from `data/acme/tune_results.json`. The run used the PyTorch MiniLM and the quoting generator, on 51 Acme documents and 623 questions. Nothing here is estimated.
 
 | Config | Chunks | k | Hybrid | Rerank | Prefer current | Composite | Correct | Faithful | Recall | Precision | Hit rate | MRR | Kept |
 | --- | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
@@ -191,51 +79,144 @@ Run locally with the free embedding model and the extractive generator. 51 docum
 | wider-chunks | structure 520/80 | 5 | yes | lexical | yes | 0.9470 | 0.9895 | 1.0000 | 1.0000 | 0.3840 | 1.0000 | 0.9991 | no |
 | high-k | structure 360/60 | 8 | yes | lexical | yes | 0.9339 | 0.9895 | 1.0000 | 1.0000 | 0.2196 | 1.0000 | 0.9991 | no |
 
-Composite moved from **0.9018** to **0.9474** (+0.0456). Where it moved, by question type (correctness):
+Composite went from **0.9018** to **0.9474**. By question type, correctness moved like this:
 
-| Type | n | Baseline | Best |
+| Type | Questions | Baseline | Best |
 | --- | ---: | ---: | ---: |
-| Conflicting versions | 37 | 0.5462 | 1.0000 |
+| Old policy versus current policy | 37 | 0.5462 | 1.0000 |
 | Table lookup | 38 | 0.2822 | 0.9765 |
-| Factual | 490 | 0.9358 | 1.0000 |
-| Multi-document | 13 | 0.7084 | 0.7190 |
+| Ordinary fact | 490 | 0.9358 | 1.0000 |
+| Needs more than one page | 13 | 0.7084 | 0.7190 |
 | Should be refused | 45 | 1.0000 | 1.0000 |
 
-Faithfulness stayed at 1.0 because the extractive generator only emits words that were in the passage. The gains are retrieval and chunking:
+What each column means:
 
-- The baseline quoted the wrong tenure band for “PTO after 3 years” (it said 25 days, the 5-year line). The promoted config quotes the 2025 sentence: 22 days.
-- Table questions jumped because a fixed word window flattens a markdown table and the row is no longer attached to its header. The structure chunker keeps the table whole, and the answer becomes one row: Chicago lodging per diem is $220.
-- Pulling more passages (`high-k`) kept the right document in the set but dragged context precision down to 0.2196, so that config was not promoted. Preferring current documents without fixing the chunks (`recency`) also lost on precision and was not promoted.
+- **Composite.** The single number used to decide whether a setup is kept. It is a weighted mix of the columns to its right.
+- **Correct.** The reply contains the known answer, including the right numbers. A refusal scores 1 only when the question is not in the handbook.
+- **Faithful.** The reply’s words appear in the passages that were retrieved. Quoting the passage makes this 1 even when the quote is the wrong sentence.
+- **Recall.** Of the pages that hold the answer, how many showed up in the retrieved set.
+- **Precision.** Of the pages that were retrieved, how many were actually pages that hold the answer.
+- **Hit rate.** At least one of the right pages was in the set.
+- **MRR.** How high the first right page was ranked. 1 means it was on top.
+
+The baseline’s quote for “PTO after 3 years” is the five-year line, 25 days. The kept setup quotes the 2025 line, 22 days. Pulling eight passages instead of five (`high-k`) found every right page and dropped precision to 0.2196, so it was not kept.
+
+A longer spoken version of these choices is in [INTERVIEW.md](INTERVIEW.md).
+
+## Quickstart
+
+One command, once Docker is installed:
+
+```bash
+docker compose up --build
+```
+
+Then open [http://127.0.0.1:8091](http://127.0.0.1:8091). The container does not install PyTorch. It loads the saved ONNX index under `data/acme/index/` and embeds only the question.
+
+Without Docker:
+
+```bash
+python -m pip install -e ".[dev,lite]"
+make test
+AUTORAG_RUNTIME=lite python -m autorag serve --source data/acme --host 0.0.0.0 --port 8091
+```
+
+Tuning, which is what produced the table above, needs the PyTorch extra and is not part of the demo container:
+
+```bash
+python -m pip install -e ".[dev,local]"
+make tune
+make serve
+```
+
+`make test` runs the suite with no network and no PyTorch. `make up` is `docker compose up --build`.
+
+```bash
+python -m autorag ask "How many PTO days after 3 years?" --source data/acme
+python -m autorag ask "How many PTO days after 3 years?" --variant baseline
+```
+
+## Point it at your own documents
+
+Put Markdown, text, or PDF in a folder. This header is optional and useful:
+
+```yaml
+---
+id: travel-policy
+title: Travel Policy
+status: current          # current | superseded | unofficial | duplicate
+effective_date: 2025-01-01
+department: Finance
+---
+```
+
+```bash
+python -m autorag tune --source ~/Documents/handbook
+python -m autorag serve --source ~/Documents/handbook --port 8091
+```
+
+If `eval.jsonl` is missing, `tune` writes starter questions next to the files. Rebuild a free-host index after a tune with `python scripts/precompute_index.py` only for the Acme snapshot. For another corpus, leave `AUTORAG_RUNTIME` unset and use the `local` extra so the server embeds the passages itself.
+
+Copy `.env.example` to `.env` only if you add a model you pay for. The repo does not contain a key.
+
+| Variable | Role |
+| --- | --- |
+| `AUTORAG_RUNTIME` | `lite` loads the saved index and uses ONNX. Unset embeds with whatever provider the config names. |
+| `AUTORAG_GENERATOR` | `extractive` quotes the page. `ollama`, `openai`, or `auto` write the sentence when that backend is actually available. |
+| `OPENAI_API_KEY` | Only if you opt into OpenAI. |
+| `OLLAMA_HOST` | Default `http://127.0.0.1:11434`. `docker compose --profile ollama up` starts it. |
+
+## Run it on a free host
+
+Both options use the same Dockerfile. It installs ONNX Runtime and fastembed, not PyTorch, and it is aimed at a 512 MB instance. Passage vectors are already in the image, so startup does not re-read the whole handbook through a model. The filesystem on these hosts is ephemeral: thumbs and new tune runs disappear on restart unless you add a disk. Do not put a real company’s private handbook on a public URL. There is no login.
+
+**Render.** Free web service, plan `free` (0.1 CPU, 512 MB). [render.yaml](render.yaml) is the Blueprint. In the Render Dashboard, create a Blueprint and point it at this repo, or run `render blueprints validate` if you use the CLI. Render sets `PORT`. The service listens on `0.0.0.0:$PORT`. Free instances sleep after about 15 minutes of quiet. The first request after that waits for the process to wake.
+
+**Hugging Face Spaces.** Create a Space, choose Docker, and point it at this repo. The block at the top of this README is the Space config: SDK `docker`, port `7860`. The image listens on 7860 unless `PORT` is set. No secret is required. The Space will rebuild from the Dockerfile the first time.
+
+## Acme, and how the files are made
+
+`scripts/generate_dataset.py` writes the handbook and the questions from the same sentences, then checks that each question still selects the sentence it claims. The generated files are committed so the repo works offline. `data/acme/docs/` has 51 pages. The 2023 PTO policy is marked superseded and still says 16 days after three years. Two Slack exports repeat stale numbers. A pocket card and an IT copy duplicate the canonical pages.
+
+`data/acme/eval.jsonl` has 623 questions. `scripts/precompute_index.py` saves the ONNX vectors for the baseline and the winning setup.
 
 ## API
 
-| Method | Path | Body / response |
+| Method | Path | What you get |
 | --- | --- | --- |
-| `GET` | `/health` | `loading` until the index is built, then document count and the active config. |
-| `POST` | `/ask` | `{ "question": "...", "variant": "best" \| "baseline" }` → answer, citations (title, snippet, status, date), confidence, `refused`. |
-| `POST` | `/feedback` | `{ "question", "answer", "rating": "up" \| "down", "correction?", "doc_ids" }`. |
-| `GET` | `/suggested-questions` | Chips for the demo. From `suggested.json` when the corpus has one. |
-| `GET` | `/runs` | Every tuning run, the baseline, the promoted config, and the composite delta. |
+| `GET` | `/health` | `loading` while the index opens, then `ok`. Always HTTP 200 while the process is up, so a free host does not restart it during startup. |
+| `POST` | `/ask` | `{ "question", "variant": "best" or "baseline" }` → answer, citations, confidence, whether it refused. |
+| `POST` | `/feedback` | `{ "question", "answer", "rating": "up" or "down", "correction?", "doc_ids" }`. |
+| `GET` | `/suggested-questions` | The chips on the demo. |
+| `GET` | `/runs` | The tune history. A fresh checkout shows the committed Acme run. |
 | `GET` | `/` | The handbook page. |
 
-Confidence is how much of the question’s wording is covered by the quoted passage. It is not a probability from a model.
+Confidence is how much of the question’s wording is in the quoted passage. It is not a probability from a chat model.
+
+A Monday re-tune, for a machine that has the PyTorch extra, is in `.github/workflows/autorag.yml`. Push checks (lint and tests, no PyTorch) are in `.github/workflows/ci.yml`. The same cron line works on a server:
+
+```cron
+15 6 * * 1  cd /opt/autorag && python -m autorag tune --source data/acme >> /var/log/autorag-tune.log 2>&1
+```
 
 ## Tests
 
 ```bash
-python -m pytest
+make test
 ```
 
-The tests cover ingest (markdown, text, PDF, a mocked URL, and the Notion/Drive stubs), both chunkers, retrieval with the hashing embedder, refusal, the metric math, a two-config tune that must beat its baseline, synthetic questions, feedback storage, fine-tune pair building, and the HTTP API. They do not download a model. `tests/test_acme_dataset.py` checks that the committed handbook still has 50+ files, the conflicting PTO policies, the Slack export, and that every graded answer is actually in its source document.
+Each stage has its own file: ingest, chunk, embed, index, retrieve, rerank, generate, evaluate, tune, feedback, and the HTTP endpoints including `/feedback`, `/suggested-questions`, and `/runs`. They use a hashing embedder, so they do not download a model. One test loads the committed ONNX index and checks the PTO answer. It is skipped if fastembed is not installed. `tests/test_acme_dataset.py` checks that the handbook on disk still matches the graded questions.
 
 ## Layout
 
 ```
-autorag/            pipeline, eval, tuning, FastAPI, demo page
-data/acme/          generated handbook, eval.jsonl, tune_results.json
-scripts/            generate_dataset.py
-tests/              stage tests and the Acme corpus checks
-runs/               sqlite history, feedback, latest.json (gitignored)
+autorag/                 pipeline, eval, tuning, API, demo page
+data/acme/               handbook, questions, tune_results.json, saved ONNX index
+docs/                    screenshot and GIF of the running page
+scripts/                 generate the handbook, save the ONNX index
+tests/                   one file per stage
+render.yaml              Render free web service
+Dockerfile               image used by Docker Compose, Render, and Spaces
 ```
 
 ## License

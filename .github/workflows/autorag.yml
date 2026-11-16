@@ -1,40 +1,23 @@
-name: autorag
+name: scheduled-tune
 
 on:
-  push:
-  pull_request:
   schedule:
-    # Monday 06:15 UTC. Re-tunes the handbook and uploads the run summary.
+    # Monday 06:15 UTC. Re-tunes on the PyTorch MiniLM. Not part of the push checks.
     - cron: "15 6 * * 1"
+  workflow_dispatch:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install CPU PyTorch and the package
-        run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e ".[dev]"
-      - name: Unit tests
-        run: pytest
-
   tune:
-    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install CPU PyTorch and the package
+      - name: Install CPU PyTorch and the tuning extra
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e .
+          pip install -e ".[local]"
       - name: Retune the Acme handbook
         run: autorag tune --source data/acme
       - uses: actions/upload-artifact@v4

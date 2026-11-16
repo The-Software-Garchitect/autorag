@@ -1,0 +1,15 @@
+{
+  "name": "baseline",
+  "chunk_strategy": "fixed",
+  "chunk_size": 80,
+  "chunk_overlap": 0,
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "embedding_provider": "fastembed",
+  "top_k": 2,
+  "candidate_k": 8,
+  "hybrid": false,
+  "reranker": "off",
+  "recency_boost": false,
+  "generator": "extractive",
+  "rrf_k": 60
+}

@@ -1,0 +1,15 @@
+{
+  "name": "hybrid",
+  "chunk_strategy": "structure",
+  "chunk_size": 360,
+  "chunk_overlap": 60,
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "embedding_provider": "fastembed",
+  "top_k": 5,
+  "candidate_k": 24,
+  "hybrid": true,
+  "reranker": "off",
+  "recency_boost": true,
+  "generator": "extractive",
+  "rrf_k": 60
+}

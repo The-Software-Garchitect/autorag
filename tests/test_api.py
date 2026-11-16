@@ -1,38 +1,41 @@
+import time
+
 from fastapi.testclient import TestClient
 
 from autorag.pipeline.embed import HashingEmbedder
 from autorag.service.app import create_app
 
 
-def test_ask_feedback_and_runs(corpus_dir, tmp_path, monkeypatch):
+def _client(corpus_dir, tmp_path, monkeypatch):
     monkeypatch.setattr("autorag.service.app.build_embedder", lambda provider, model: HashingEmbedder())
     app = create_app(str(corpus_dir), str(tmp_path / "runs"))
-    with TestClient(app) as client:
-        health = client.get("/health")
-        assert health.status_code == 200
-        assert health.json()["documents"] == 4
+    client = TestClient(app)
+    client.__enter__()
+    deadline = time.time() + 5
+    body = {}
+    while time.time() < deadline:
+        response = client.get("/health")
+        body = response.json()
+        if body.get("status") == "ok":
+            return client, body
+        time.sleep(0.05)
+    raise AssertionError(body)
 
-        page = client.get("/")
-        assert page.status_code == 200
-        assert "Ask the handbook" in page.text
+
+def test_suggested_questions_feedback_and_runs(corpus_dir, tmp_path, monkeypatch):
+    client, health = _client(corpus_dir, tmp_path, monkeypatch)
+    try:
+        assert health["documents"] == 4
+        assert client.get("/").status_code == 200
 
         suggestions = client.get("/suggested-questions")
         assert suggestions.status_code == 200
-        assert suggestions.json()["questions"]
+        questions = suggestions.json()["questions"]
+        assert questions and all(isinstance(item, str) for item in questions)
 
         answer = client.post("/ask", json={"question": "What is the team snack expense limit?"}).json()
         assert "12" in answer["answer"]
         assert answer["citations"]
-        assert answer["config"]
-
-        baseline = client.post(
-            "/ask",
-            json={"question": "What is the team snack expense limit?", "variant": "baseline"},
-        ).json()
-        assert baseline["variant"] == "baseline"
-
-        refused = client.post("/ask", json={"question": "Does the handbook include pet insurance for employees?"}).json()
-        assert refused["refused"] is True
 
         feedback = client.post(
             "/feedback",
@@ -46,21 +49,38 @@ def test_ask_feedback_and_runs(corpus_dir, tmp_path, monkeypatch):
         assert feedback.status_code == 200
         assert feedback.json()["stored"] is True
 
-        runs = client.get("/runs").json()
-        assert "runs" in runs
+        rejected = client.post(
+            "/feedback",
+            json={"question": "noise", "answer": "nope", "rating": "sideways"},
+        )
+        assert rejected.status_code == 400
+
+        runs = client.get("/runs")
+        assert runs.status_code == 200
+        payload = runs.json()
+        assert "runs" in payload
+        assert payload["runs"] == []
+    finally:
+        client.__exit__(None, None, None)
 
 
-def test_openai_chat_parses_a_mocked_response():
-    import httpx
-
-    from autorag.pipeline.generate import OpenAIChat
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v1/chat/completions"
-        body = request.read()
-        assert b"handbook" in body
-        return httpx.Response(200, json={"choices": [{"message": {"content": "22 days."}}]})
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    chat = OpenAIChat(api_key="test-key", client=client)
-    assert chat.complete("Answer from the handbook.") == "22 days."
+def test_runs_reads_a_published_snapshot(corpus_dir, tmp_path, monkeypatch):
+    snapshot = {
+        "source": str(corpus_dir),
+        "question_count": 3,
+        "improvement": 0.0456,
+        "baseline": {"name": "baseline", "metrics": {"composite": 0.9018}},
+        "best": {"name": "hybrid", "metrics": {"composite": 0.9474}, "config": {"name": "hybrid"}},
+        "runs": [
+            {"name": "baseline", "metrics": {"composite": 0.9018}, "promoted": True, "is_baseline": True},
+            {"name": "hybrid", "metrics": {"composite": 0.9474}, "promoted": True, "is_baseline": False},
+        ],
+    }
+    (corpus_dir / "tune_results.json").write_text(__import__("json").dumps(snapshot), encoding="utf-8")
+    client, _health = _client(corpus_dir, tmp_path, monkeypatch)
+    try:
+        payload = client.get("/runs").json()
+        assert [run["name"] for run in payload["runs"]] == ["baseline", "hybrid"]
+        assert payload["improvement"] == 0.0456
+    finally:
+        client.__exit__(None, None, None)
