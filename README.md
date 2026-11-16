@@ -14,6 +14,10 @@ Point it at any company's documents.
 It builds a question-answering API that cites the page each answer came from.
 It tests and tunes itself until the answers are measurably right.
 
+**[Live demo](https://autorag-handbook.onrender.com)**
+
+The free host sleeps when idle, so the first load can take about a minute.
+
 Acme Co is the demo, not the product. Before tuning, "How many PTO days after 3 years?" quoted the five-year line from the 2025 policy: **25 days**. After tuning, it quotes the three-year line from that same policy: **22 days**.
 
 ![The demo quoting 22 PTO days from the current policy, with the tuning chart beside it](docs/demo.png)
@@ -126,6 +130,10 @@ make tune
 ```
 
 OpenAI and Ollama are optional. Set `generator: openai` or `generator: ollama` in `autorag.yaml`, or set `AUTORAG_GENERATOR`. With neither, answers are quotes from the files. Copy `.env.example` only if you add a key. The repo has no secrets.
+
+## Deploy
+
+The [live demo](https://autorag-handbook.onrender.com) is hosted on Render's free plan. The service is [render.yaml](render.yaml), and pushes to `main` deploy it.
 
 ## Free hosting
 
