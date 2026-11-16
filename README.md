@@ -133,7 +133,7 @@ OpenAI and Ollama are optional. Set `generator: openai` or `generator: ollama` i
 
 ## Deploy
 
-The [live demo](https://autorag-handbook.onrender.com) is hosted on Render's free plan. The service is [render.yaml](render.yaml), and pushes to `main` deploy it.
+The [live demo](https://autorag-handbook.onrender.com) is hosted on Render's free plan. The service is defined in [render.yaml](render.yaml), and pushes to `main` deploy it.
 
 ## Free hosting
 
