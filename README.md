@@ -18,6 +18,10 @@ Acme Co is the demo, not the product. Before tuning, "How many PTO days after 3 
 
 ![The demo quoting 22 PTO days from the current policy, with the tuning chart beside it](docs/demo.png)
 
+![Asking a suggested question and comparing the untuned vs tuned answer](docs/demo.gif)
+
+Asking a suggested question and comparing the untuned vs tuned answer
+
 ## Swap in another folder
 
 Two commands. No code changes. The folder can be any mix of Markdown, text, and PDF.
