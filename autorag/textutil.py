@@ -84,8 +84,6 @@ STOPWORDS = frozenset(
         "also",
         "because",
         "while",
-        "handbook",
-        "acme",
         "many",
         "much",
         "get",

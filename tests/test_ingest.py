@@ -1,16 +1,6 @@
 from pathlib import Path
 
-import httpx
-import pytest
-
-from autorag.pipeline.ingest import (
-    GoogleDriveLoader,
-    LocalFolderLoader,
-    NotionLoader,
-    SourceNotConfigured,
-    UrlLoader,
-    load_corpus,
-)
+from autorag.pipeline.ingest import LocalFolderLoader, load_corpus
 
 
 def test_local_folder_reads_markdown_frontmatter(corpus_dir: Path):
@@ -38,24 +28,19 @@ def test_pdf_loader(tmp_path: Path):
     assert "vpn.acme.example" in docs[0].text
 
 
-def test_url_loader_strips_html():
-    html = "<html><body><h1>Handbook</h1><p>The snack limit is $12.</p><script>alert(1)</script></body></html>"
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=html)
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-    docs = UrlLoader(["https://intranet.example/handbook"], client=client).load()
-    assert "snack limit" in docs[0].text
-    assert "alert" not in docs[0].text
-    assert docs[0].source.startswith("https://")
-
-
-def test_future_loaders_explain_themselves():
-    with pytest.raises(SourceNotConfigured):
-        NotionLoader().load()
-    with pytest.raises(SourceNotConfigured):
-        GoogleDriveLoader().load()
+def test_supersedes_field_marks_the_older_page(tmp_path: Path):
+    (tmp_path / "menu-2023.md").write_text(
+        "---\nid: menu-2023\ntitle: Dinner Menu\nstatus: current\neffective_date: 2023-01-01\n---\n\nThe burger is $12.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "menu-2025.md").write_text(
+        "---\nid: menu-2025\ntitle: Dinner Menu\nstatus: current\neffective_date: 2025-01-01\nsupersedes: menu-2023\n---\n\nThe burger is $16.\n",
+        encoding="utf-8",
+    )
+    docs = {doc.id: doc for doc in load_corpus(str(tmp_path))}
+    assert docs["menu-2023"].metadata["status"] == "superseded"
+    assert docs["menu-2023"].metadata["superseded_by"] == "menu-2025"
+    assert docs["menu-2025"].metadata["status"] == "current"
 
 
 def _simple_pdf(text: str) -> bytes:

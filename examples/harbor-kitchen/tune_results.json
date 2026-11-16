@@ -1,0 +1,449 @@
+{
+  "source": "examples/harbor-kitchen",
+  "eval": "examples/harbor-kitchen/eval.jsonl",
+  "question_count": 12,
+  "baseline": {
+    "id": "20261116T185006-baseline",
+    "created_at": "2026-11-16T18:50:06+00:00",
+    "name": "baseline",
+    "promoted": true,
+    "is_baseline": true,
+    "question_count": 12,
+    "config": {
+      "name": "baseline",
+      "chunk_strategy": "fixed",
+      "chunk_size": 80,
+      "chunk_overlap": 0,
+      "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "embedding_provider": "local",
+      "top_k": 2,
+      "candidate_k": 8,
+      "hybrid": false,
+      "reranker": "off",
+      "recency_boost": false,
+      "generator": "extractive",
+      "rrf_k": 60
+    },
+    "metrics": {
+      "n": 12,
+      "correctness": 1.0,
+      "faithfulness": 1.0,
+      "context_recall": 1.0,
+      "context_precision": 0.5,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "refusal_accuracy": 0.0,
+      "composite": 0.96,
+      "by_type": {
+        "synthetic": {
+          "n": 12,
+          "correctness": 1.0,
+          "faithfulness": 1.0
+        }
+      },
+      "weights": {
+        "correctness": 0.34,
+        "faithfulness": 0.1,
+        "context_recall": 0.18,
+        "context_precision": 0.08,
+        "hit_rate": 0.15,
+        "mrr": 0.15
+      }
+    }
+  },
+  "best": {
+    "id": "20261116T185006-baseline",
+    "created_at": "2026-11-16T18:50:06+00:00",
+    "name": "baseline",
+    "promoted": true,
+    "is_baseline": true,
+    "question_count": 12,
+    "config": {
+      "name": "baseline",
+      "chunk_strategy": "fixed",
+      "chunk_size": 80,
+      "chunk_overlap": 0,
+      "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "embedding_provider": "local",
+      "top_k": 2,
+      "candidate_k": 8,
+      "hybrid": false,
+      "reranker": "off",
+      "recency_boost": false,
+      "generator": "extractive",
+      "rrf_k": 60
+    },
+    "metrics": {
+      "n": 12,
+      "correctness": 1.0,
+      "faithfulness": 1.0,
+      "context_recall": 1.0,
+      "context_precision": 0.5,
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "refusal_accuracy": 0.0,
+      "composite": 0.96,
+      "by_type": {
+        "synthetic": {
+          "n": 12,
+          "correctness": 1.0,
+          "faithfulness": 1.0
+        }
+      },
+      "weights": {
+        "correctness": 0.34,
+        "faithfulness": 0.1,
+        "context_recall": 0.18,
+        "context_precision": 0.08,
+        "hit_rate": 0.15,
+        "mrr": 0.15
+      }
+    }
+  },
+  "runs": [
+    {
+      "id": "20261116T185006-baseline",
+      "created_at": "2026-11-16T18:50:06+00:00",
+      "name": "baseline",
+      "promoted": true,
+      "is_baseline": true,
+      "question_count": 12,
+      "config": {
+        "name": "baseline",
+        "chunk_strategy": "fixed",
+        "chunk_size": 80,
+        "chunk_overlap": 0,
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "embedding_provider": "local",
+        "top_k": 2,
+        "candidate_k": 8,
+        "hybrid": false,
+        "reranker": "off",
+        "recency_boost": false,
+        "generator": "extractive",
+        "rrf_k": 60
+      },
+      "metrics": {
+        "n": 12,
+        "correctness": 1.0,
+        "faithfulness": 1.0,
+        "context_recall": 1.0,
+        "context_precision": 0.5,
+        "hit_rate": 1.0,
+        "mrr": 1.0,
+        "refusal_accuracy": 0.0,
+        "composite": 0.96,
+        "by_type": {
+          "synthetic": {
+            "n": 12,
+            "correctness": 1.0,
+            "faithfulness": 1.0
+          }
+        },
+        "weights": {
+          "correctness": 0.34,
+          "faithfulness": 0.1,
+          "context_recall": 0.18,
+          "context_precision": 0.08,
+          "hit_rate": 0.15,
+          "mrr": 0.15
+        }
+      }
+    },
+    {
+      "id": "20261116T185006-recency",
+      "created_at": "2026-11-16T18:50:06+00:00",
+      "name": "recency",
+      "promoted": false,
+      "is_baseline": false,
+      "question_count": 12,
+      "config": {
+        "name": "recency",
+        "chunk_strategy": "fixed",
+        "chunk_size": 80,
+        "chunk_overlap": 0,
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "embedding_provider": "local",
+        "top_k": 4,
+        "candidate_k": 12,
+        "hybrid": false,
+        "reranker": "off",
+        "recency_boost": true,
+        "generator": "extractive",
+        "rrf_k": 60
+      },
+      "metrics": {
+        "n": 12,
+        "correctness": 1.0,
+        "faithfulness": 1.0,
+        "context_recall": 1.0,
+        "context_precision": 0.25,
+        "hit_rate": 1.0,
+        "mrr": 1.0,
+        "refusal_accuracy": 0.0,
+        "composite": 0.94,
+        "by_type": {
+          "synthetic": {
+            "n": 12,
+            "correctness": 1.0,
+            "faithfulness": 1.0
+          }
+        },
+        "weights": {
+          "correctness": 0.34,
+          "faithfulness": 0.1,
+          "context_recall": 0.18,
+          "context_precision": 0.08,
+          "hit_rate": 0.15,
+          "mrr": 0.15
+        }
+      }
+    },
+    {
+      "id": "20261116T185007-structure",
+      "created_at": "2026-11-16T18:50:07+00:00",
+      "name": "structure",
+      "promoted": false,
+      "is_baseline": false,
+      "question_count": 12,
+      "config": {
+        "name": "structure",
+        "chunk_strategy": "structure",
+        "chunk_size": 360,
+        "chunk_overlap": 60,
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "embedding_provider": "local",
+        "top_k": 5,
+        "candidate_k": 24,
+        "hybrid": false,
+        "reranker": "off",
+        "recency_boost": true,
+        "generator": "extractive",
+        "rrf_k": 60
+      },
+      "metrics": {
+        "n": 12,
+        "correctness": 1.0,
+        "faithfulness": 1.0,
+        "context_recall": 1.0,
+        "context_precision": 0.225,
+        "hit_rate": 1.0,
+        "mrr": 1.0,
+        "refusal_accuracy": 0.0,
+        "composite": 0.938,
+        "by_type": {
+          "synthetic": {
+            "n": 12,
+            "correctness": 1.0,
+            "faithfulness": 1.0
+          }
+        },
+        "weights": {
+          "correctness": 0.34,
+          "faithfulness": 0.1,
+          "context_recall": 0.18,
+          "context_precision": 0.08,
+          "hit_rate": 0.15,
+          "mrr": 0.15
+        }
+      }
+    },
+    {
+      "id": "20261116T185007-hybrid",
+      "created_at": "2026-11-16T18:50:07+00:00",
+      "name": "hybrid",
+      "promoted": false,
+      "is_baseline": false,
+      "question_count": 12,
+      "config": {
+        "name": "hybrid",
+        "chunk_strategy": "structure",
+        "chunk_size": 360,
+        "chunk_overlap": 60,
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "embedding_provider": "local",
+        "top_k": 5,
+        "candidate_k": 24,
+        "hybrid": true,
+        "reranker": "off",
+        "recency_boost": true,
+        "generator": "extractive",
+        "rrf_k": 60
+      },
+      "metrics": {
+        "n": 12,
+        "correctness": 1.0,
+        "faithfulness": 1.0,
+        "context_recall": 1.0,
+        "context_precision": 0.2208,
+        "hit_rate": 1.0,
+        "mrr": 1.0,
+        "refusal_accuracy": 0.0,
+        "composite": 0.9377,
+        "by_type": {
+          "synthetic": {
+            "n": 12,
+            "correctness": 1.0,
+            "faithfulness": 1.0
+          }
+        },
+        "weights": {
+          "correctness": 0.34,
+          "faithfulness": 0.1,
+          "context_recall": 0.18,
+          "context_precision": 0.08,
+          "hit_rate": 0.15,
+          "mrr": 0.15
+        }
+      }
+    },
+    {
+      "id": "20261116T185007-rerank",
+      "created_at": "2026-11-16T18:50:07+00:00",
+      "name": "rerank",
+      "promoted": false,
+      "is_baseline": false,
+      "question_count": 12,
+      "config": {
+        "name": "rerank",
+        "chunk_strategy": "structure",
+        "chunk_size": 360,
+        "chunk_overlap": 60,
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "embedding_provider": "local",
+        "top_k": 5,
+        "candidate_k": 24,
+        "hybrid": true,
+        "reranker": "lexical",
+        "recency_boost": true,
+        "generator": "extractive",
+        "rrf_k": 60
+      },
+      "metrics": {
+        "n": 12,
+        "correctness": 1.0,
+        "faithfulness": 1.0,
+        "context_recall": 1.0,
+        "context_precision": 0.2292,
+        "hit_rate": 1.0,
+        "mrr": 1.0,
+        "refusal_accuracy": 0.0,
+        "composite": 0.9383,
+        "by_type": {
+          "synthetic": {
+            "n": 12,
+            "correctness": 1.0,
+            "faithfulness": 1.0
+          }
+        },
+        "weights": {
+          "correctness": 0.34,
+          "faithfulness": 0.1,
+          "context_recall": 0.18,
+          "context_precision": 0.08,
+          "hit_rate": 0.15,
+          "mrr": 0.15
+        }
+      }
+    },
+    {
+      "id": "20261116T185007-wider-chunks",
+      "created_at": "2026-11-16T18:50:07+00:00",
+      "name": "wider-chunks",
+      "promoted": false,
+      "is_baseline": false,
+      "question_count": 12,
+      "config": {
+        "name": "wider-chunks",
+        "chunk_strategy": "structure",
+        "chunk_size": 520,
+        "chunk_overlap": 80,
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "embedding_provider": "local",
+        "top_k": 5,
+        "candidate_k": 24,
+        "hybrid": true,
+        "reranker": "lexical",
+        "recency_boost": true,
+        "generator": "extractive",
+        "rrf_k": 60
+      },
+      "metrics": {
+        "n": 12,
+        "correctness": 1.0,
+        "faithfulness": 1.0,
+        "context_recall": 1.0,
+        "context_precision": 0.2292,
+        "hit_rate": 1.0,
+        "mrr": 1.0,
+        "refusal_accuracy": 0.0,
+        "composite": 0.9383,
+        "by_type": {
+          "synthetic": {
+            "n": 12,
+            "correctness": 1.0,
+            "faithfulness": 1.0
+          }
+        },
+        "weights": {
+          "correctness": 0.34,
+          "faithfulness": 0.1,
+          "context_recall": 0.18,
+          "context_precision": 0.08,
+          "hit_rate": 0.15,
+          "mrr": 0.15
+        }
+      }
+    },
+    {
+      "id": "20261116T185007-high-k",
+      "created_at": "2026-11-16T18:50:07+00:00",
+      "name": "high-k",
+      "promoted": false,
+      "is_baseline": false,
+      "question_count": 12,
+      "config": {
+        "name": "high-k",
+        "chunk_strategy": "structure",
+        "chunk_size": 360,
+        "chunk_overlap": 60,
+        "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+        "embedding_provider": "local",
+        "top_k": 8,
+        "candidate_k": 24,
+        "hybrid": true,
+        "reranker": "lexical",
+        "recency_boost": true,
+        "generator": "extractive",
+        "rrf_k": 60
+      },
+      "metrics": {
+        "n": 12,
+        "correctness": 1.0,
+        "faithfulness": 1.0,
+        "context_recall": 1.0,
+        "context_precision": 0.1404,
+        "hit_rate": 1.0,
+        "mrr": 1.0,
+        "refusal_accuracy": 0.0,
+        "composite": 0.9312,
+        "by_type": {
+          "synthetic": {
+            "n": 12,
+            "correctness": 1.0,
+            "faithfulness": 1.0
+          }
+        },
+        "weights": {
+          "correctness": 0.34,
+          "faithfulness": 0.1,
+          "context_recall": 0.18,
+          "context_precision": 0.08,
+          "hit_rate": 0.15,
+          "mrr": 0.15
+        }
+      }
+    }
+  ],
+  "improvement": 0.0
+}

@@ -1,13 +1,17 @@
-"""Pipeline configuration.
+"""Pipeline configuration and the optional project file.
 
-A config is the set of knobs the tuner is allowed to turn: how the handbook is
-cut into chunks, which embedding model reads them, how many chunks are retrieved,
-and whether keyword search, a reranker, or a preference for current documents is on.
+``autorag.yaml`` names the folder to read. ``--source`` overrides that file.
+A config is the set of knobs the tuner may turn: how pages are cut, which
+embedding model reads them, how many passages come back, and whether keyword
+search or a preference for current pages is on.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, fields
+from pathlib import Path
+
+import yaml
 
 
 @dataclass
@@ -17,7 +21,7 @@ class PipelineConfig:
     chunk_size: int = 360  # whitespace-separated words
     chunk_overlap: int = 60
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    embedding_provider: str = "local"  # local | openai | hashing | ollama
+    embedding_provider: str = "local"  # local | fastembed | hashing
     top_k: int = 5
     candidate_k: int = 24
     hybrid: bool = True
@@ -85,6 +89,39 @@ def default_config(embedding_model: str | None = None) -> PipelineConfig:
     if embedding_model:
         cfg.embedding_model = embedding_model
     return cfg
+
+
+def load_settings(path: str | Path = "autorag.yaml") -> dict:
+    """Read the project file. Missing file means an empty dict, not an error."""
+    file = Path(path)
+    if not file.exists():
+        return {}
+    loaded = yaml.safe_load(file.read_text(encoding="utf-8")) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"{file} must be a mapping")
+    return loaded
+
+
+def configured_source(settings: dict | None = None) -> str:
+    settings = load_settings() if settings is None else settings
+    return str(settings.get("source") or "data/acme")
+
+
+def configured_title(source: str, settings: dict | None = None) -> str:
+    settings = load_settings() if settings is None else settings
+    local = Path(source) / "autorag.yaml"
+    if local.exists():
+        extra = yaml.safe_load(local.read_text(encoding="utf-8")) or {}
+        if isinstance(extra, dict) and extra.get("title"):
+            return str(extra["title"])
+    if str(settings.get("source") or "") == source and settings.get("title"):
+        return str(settings["title"])
+    return Path(source).name.replace("-", " ").replace("_", " ").title()
+
+
+def configured_generator(settings: dict | None = None) -> str:
+    settings = load_settings() if settings is None else settings
+    return str(settings.get("generator") or "extractive")
 
 
 def search_space(embedding_model: str) -> list[PipelineConfig]:

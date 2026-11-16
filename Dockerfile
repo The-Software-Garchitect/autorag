@@ -23,6 +23,7 @@ RUN pip install --no-cache-dir ".[lite]"
 
 COPY data ./data
 COPY scripts ./scripts
+COPY autorag.yaml ./autorag.yaml
 
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding('sentence-transformers/all-MiniLM-L6-v2')"
 

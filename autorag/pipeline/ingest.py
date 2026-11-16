@@ -1,14 +1,13 @@
-"""Load documents from a source into a common record.
+"""Load a folder of Markdown, text, and PDF into one document list.
 
-Today the working loader reads a local folder of Markdown, text, and PDF files.
-Notion, Google Drive, and URL crawl adapters share the same ``load() -> documents``
-shape so they can be filled in without touching chunking or retrieval.
+A newer file can name the page it replaces with ``supersedes: older-id`` in
+front matter. That older page is then treated as superseded, even if its own
+status line still says current.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
 
 import yaml
 
@@ -16,15 +15,6 @@ from autorag.models import Document
 
 SKIP_NAMES = {"eval.jsonl", "suggested.json", "tune_results.json"}
 TEXT_SUFFIXES = {".md", ".markdown", ".txt"}
-
-
-class SourceNotConfigured(RuntimeError):
-    """Raised when a loader's interface exists but its credentials do not."""
-
-
-class SourceLoader(Protocol):
-    def load(self) -> list[Document]:
-        """Return documents in a stable order."""
 
 
 def parse_frontmatter(text: str) -> tuple[dict, str]:
@@ -116,131 +106,23 @@ class LocalFolderLoader:
         return documents
 
 
-class UrlLoader:
-    """Fetch one or more web pages and keep their visible text.
-
-    ``client`` can be an httpx.Client, which tests replace with a mock transport.
-    """
-
-    def __init__(self, urls: list[str], client=None):
-        self.urls = urls
-        self.client = client
-
-    def load(self) -> list[Document]:
-        import httpx
-
-        owns_client = self.client is None
-        client = self.client or httpx.Client(timeout=20, follow_redirects=True)
-        documents: list[Document] = []
-        try:
-            for url in self.urls:
-                response = client.get(url)
-                response.raise_for_status()
-                text = html_to_text(response.text)
-                documents.append(
-                    Document(
-                        id=_url_id(url),
-                        title=url,
-                        text=text,
-                        source=url,
-                        metadata={"status": "current", "loader": "url"},
-                    )
-                )
-        finally:
-            if owns_client:
-                client.close()
-        return documents
-
-
-class NotionLoader:
-    """Stable interface for a future Notion export.
-
-    Requires ``NOTION_TOKEN`` and ``NOTION_ROOT_PAGE``. The client is intentionally
-    not bundled; calling ``load`` explains what is missing instead of pretending
-    to return documents.
-    """
-
-    def __init__(self, token: str | None = None, root_page: str | None = None):
-        self.token = token
-        self.root_page = root_page
-
-    def load(self) -> list[Document]:
-        if not self.token or not self.root_page:
-            raise SourceNotConfigured(
-                "NotionLoader.load needs a Notion integration token and a root page id. "
-                "The loader interface matches LocalFolderLoader; the API client is not bundled."
-            )
-        raise SourceNotConfigured(
-            "NotionLoader is wired as an interface only. Drop in a Notion client that "
-            "returns autorag.models.Document records from the root page."
-        )
-
-
-class GoogleDriveLoader:
-    """Stable interface for a future Google Drive folder sync."""
-
-    def __init__(self, folder_id: str | None = None, credentials_path: str | None = None):
-        self.folder_id = folder_id
-        self.credentials_path = credentials_path
-
-    def load(self) -> list[Document]:
-        if not self.folder_id or not self.credentials_path:
-            raise SourceNotConfigured(
-                "GoogleDriveLoader.load needs a folder id and a credentials file. "
-                "The loader interface matches LocalFolderLoader; the Drive client is not bundled."
-            )
-        raise SourceNotConfigured(
-            "GoogleDriveLoader is wired as an interface only. Drop in a Drive client that "
-            "returns autorag.models.Document records from the folder."
-        )
-
-
-def html_to_text(html: str) -> str:
-    import html as html_lib
-
-    without_blocks = re_sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
-    with_breaks = re_sub(r"(?i)<br\s*/?>", "\n", without_blocks)
-    with_breaks = re_sub(r"(?i)</p>", "\n\n", with_breaks)
-    with_breaks = re_sub(r"(?i)<h[1-6][^>]*>", "\n# ", with_breaks)
-    stripped = re_sub(r"<[^>]+>", " ", with_breaks)
-    unescaped = html_lib.unescape(stripped)
-    lines = [" ".join(line.split()) for line in unescaped.splitlines()]
-    return "\n".join(line for line in lines if line).strip()
-
-
-def re_sub(pattern: str, repl: str, text: str) -> str:
-    import re
-
-    return re.sub(pattern, repl, text)
-
-
-def _url_id(url: str) -> str:
-    import re
-
-    cleaned = re.sub(r"^https?://", "", url).strip("/")
-    cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", cleaned).strip("-").lower()
-    return cleaned[:80] or "url"
+def mark_superseded(documents: list[Document]) -> list[Document]:
+    """Honor a ``supersedes`` field. The named page is the older one."""
+    by_id = {document.id: document for document in documents}
+    for document in documents:
+        older_id = document.metadata.get("supersedes")
+        if not older_id:
+            continue
+        older = by_id.get(str(older_id))
+        if older is None or older.id == document.id:
+            continue
+        status = str(older.metadata.get("status") or "current").lower()
+        if status == "current":
+            older.metadata["status"] = "superseded"
+            older.metadata["superseded_by"] = document.id
+    return documents
 
 
 def load_corpus(source: str) -> list[Document]:
-    """Dispatch a source string to the right loader.
-
-    ``notion:<page>`` and ``gdrive:<folder>`` call the future adapters.
-    ``http(s):`` URLs are fetched. Anything else is a local file or folder.
-    """
-    if source.startswith("notion:"):
-        page = source.split(":", 1)[1]
-        import os
-
-        return NotionLoader(token=os.environ.get("NOTION_TOKEN"), root_page=page or None).load()
-    if source.startswith("gdrive:"):
-        folder = source.split(":", 1)[1]
-        import os
-
-        return GoogleDriveLoader(
-            folder_id=folder or None,
-            credentials_path=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
-        ).load()
-    if source.startswith("http://") or source.startswith("https://"):
-        return UrlLoader([source]).load()
-    return LocalFolderLoader(source).load()
+    """Read one file or a directory. Skip eval and tune artifacts."""
+    return mark_superseded(LocalFolderLoader(source).load())

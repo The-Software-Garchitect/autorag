@@ -13,7 +13,14 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from autorag.config import PipelineConfig, baseline_config, default_config
+from autorag.config import (
+    PipelineConfig,
+    baseline_config,
+    configured_generator,
+    configured_title,
+    default_config,
+    load_settings,
+)
 from autorag.pipeline.embed import build_embedder
 from autorag.pipeline.engine import Bundle, build_bundle, load_precomputed_bundle
 from autorag.pipeline.generate import resolve_generator
@@ -50,6 +57,7 @@ class HandbookService:
         self.docs = []
         self.best_config = default_config()
         self.baseline_config = baseline_config()
+        self.title = configured_title(source, load_settings())
         self._bundles: dict[tuple, Bundle] = {}
         self._embedders: dict[tuple, object] = {}
         self._lock = threading.Lock()
@@ -67,7 +75,7 @@ class HandbookService:
                 self.best_config = PipelineConfig.from_dict(snapshot["best"]["config"])
                 if snapshot.get("baseline", {}).get("config"):
                     self.baseline_config = PipelineConfig.from_dict(snapshot["baseline"]["config"])
-            override = os.environ.get("AUTORAG_GENERATOR")
+            override = os.environ.get("AUTORAG_GENERATOR") or configured_generator(load_settings())
             if override:
                 self.best_config.generator = override
                 self.baseline_config.generator = override
@@ -189,12 +197,14 @@ def create_app(source: str = "data/acme", runs_dir: str = "runs") -> FastAPI:
         if service.error:
             return JSONResponse({"status": "error", "detail": service.error}, status_code=500)
         if not service.ready:
-            return {"status": "loading", "documents": 0}
+            return {"status": "loading", "documents": 0, "title": service.title, "source": service.source}
         return {
             "status": "ok",
             "documents": len(service.docs),
             "config": service.best_config.name,
             "generator": resolve_generator(service.best_config.generator),
+            "title": service.title,
+            "source": service.source,
         }
 
     @app.post("/ask")

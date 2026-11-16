@@ -28,9 +28,9 @@ def tune(
     generator: str = "extractive",
     limit: int = 0,
     configs: list[PipelineConfig] | None = None,
-    finetune_model: str | None = None,
     feedback_rows: list[dict] | None = None,
     log=print,
+    write_source_snapshot: bool = True,
 ) -> dict:
     documents = load_corpus(source)
     if not documents:
@@ -49,22 +49,6 @@ def tune(
         config.generator = generator
         if config.embedding_provider == "local" and not str(config.embedding_model).startswith("runs/"):
             config.embedding_model = embedding_model
-    if finetune_model:
-        tuned = PipelineConfig(
-            name="finetuned",
-            chunk_strategy="structure",
-            chunk_size=360,
-            chunk_overlap=60,
-            embedding_model=finetune_model,
-            embedding_provider="local",
-            top_k=5,
-            candidate_k=24,
-            hybrid=True,
-            reranker="lexical",
-            recency_boost=True,
-            generator=generator,
-        )
-        space.append(tuned)
 
     runs_path = Path(runs_dir)
     store = HistoryStore(runs_path / "autorag.sqlite")
@@ -109,7 +93,7 @@ def tune(
     payload = _snapshot(source, items, records, champion, eval_origin)
     publish_snapshot(runs_path / "latest.json", payload)
     source_path = Path(source)
-    if source_path.is_dir():
+    if write_source_snapshot and source_path.is_dir():
         publish_snapshot(source_path / "tune_results.json", _public_snapshot(payload))
     log(
         f"Best config: {payload['best']['name']}  "

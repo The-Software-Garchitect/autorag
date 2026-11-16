@@ -1,0 +1,6 @@
+# Point this at any folder of markdown, text, or PDF. Then run:
+#   autorag tune --source <that folder>
+#   autorag serve --source <that folder>
+source: data/acme
+title: Acme Handbook
+generator: extractive

@@ -32,6 +32,9 @@ def _heuristic(documents: list[Document], per_doc: int) -> list[EvalItem]:
     chunks = chunk_documents(documents, config)
     seen_docs: dict[str, int] = {}
     for chunk in chunks:
+        status = str(chunk.metadata.get("status") or "current").lower()
+        if status in {"superseded", "archived", "outdated"}:
+            continue
         if seen_docs.get(chunk.doc_id, 0) >= per_doc:
             continue
         for sentence in split_sentences(chunk.text):

@@ -7,7 +7,7 @@ import json
 import os
 from pathlib import Path
 
-from autorag.config import baseline_config, default_config
+from autorag.config import baseline_config, configured_generator, configured_source, default_config, load_settings
 from autorag.pipeline.engine import build_bundle
 from autorag.pipeline.generate import resolve_generator
 from autorag.pipeline.ingest import load_corpus
@@ -23,27 +23,21 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     tune_cmd = sub.add_parser("tune", help="Ingest a corpus, score configs, and promote a winner")
-    tune_cmd.add_argument("--source", required=True, help="Folder of documents, or a loader URI")
+    tune_cmd.add_argument("--source", default=None, help="Document folder. Defaults to source in autorag.yaml")
     tune_cmd.add_argument("--eval", default=None, help="Gold JSONL. Defaults to <source>/eval.jsonl")
     tune_cmd.add_argument("--runs", default="runs")
     tune_cmd.add_argument("--limit", type=int, default=0, help="Score at most this many questions (0 = all)")
-    tune_cmd.add_argument("--generator", default="extractive", choices=["extractive", "ollama", "openai", "auto"])
-    tune_cmd.add_argument(
-        "--embedding-model",
-        default="sentence-transformers/all-MiniLM-L6-v2",
-    )
-    tune_cmd.add_argument("--finetune", action="store_true", help="Fine-tune a small embedding model and score it")
     tune_cmd.set_defaults(func=cmd_tune)
 
     ask_cmd = sub.add_parser("ask", help="Ask one question against the best saved config")
     ask_cmd.add_argument("question")
-    ask_cmd.add_argument("--source", default="data/acme")
+    ask_cmd.add_argument("--source", default=None)
     ask_cmd.add_argument("--runs", default="runs")
     ask_cmd.add_argument("--variant", default="best", choices=["best", "baseline"])
     ask_cmd.set_defaults(func=cmd_ask)
 
-    serve_cmd = sub.add_parser("serve", help="Run the API and the handbook demo")
-    serve_cmd.add_argument("--source", default="data/acme")
+    serve_cmd = sub.add_parser("serve", help="Run the API and the demo page")
+    serve_cmd.add_argument("--source", default=None)
     serve_cmd.add_argument("--host", default=os.environ.get("AUTORAG_HOST", "0.0.0.0"))
     serve_cmd.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8091")))
     serve_cmd.add_argument("--runs", default="runs")
@@ -67,20 +61,7 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def cmd_tune(args) -> None:
-    finetuned = None
-    if args.finetune:
-        from autorag.eval.dataset import find_eval_path, load_eval_items
-        from autorag.tune.finetune import finetune
-
-        documents = load_corpus(args.source)
-        path = Path(args.eval) if args.eval else find_eval_path(args.source)
-        if path is None:
-            raise SystemExit("--finetune needs a gold eval set so it knows which passage answers each question.")
-        items = load_eval_items(path)
-        out = Path(args.runs) / "finetuned-embed"
-        print(f"Fine-tuning {args.embedding_model} on {min(len(items), 400)} pairs → {out}")
-        finetuned = finetune(documents, items, out, base_model=args.embedding_model)
-
+    source = _source(args.source)
     feedback_path = Path(args.runs) / "autorag.sqlite"
     rows = []
     if feedback_path.exists():
@@ -88,18 +69,17 @@ def cmd_tune(args) -> None:
         rows = store.list_all()
         store.close()
     tune(
-        source=args.source,
+        source=source,
         runs_dir=args.runs,
         eval_path=args.eval,
-        embedding_model=args.embedding_model,
-        generator=args.generator,
+        generator=_generator(),
         limit=args.limit,
-        finetune_model=finetuned,
         feedback_rows=rows,
     )
 
 
 def cmd_ask(args) -> None:
+    args.source = _source(args.source)
     documents = load_corpus(args.source)
     config = _config_for(args.source, args.runs, args.variant)
     bundle = build_bundle(documents, config)
@@ -152,9 +132,18 @@ def cmd_serve(args) -> None:
 
     from autorag.service.app import create_app
 
-    app = create_app(args.source, args.runs)
-    print(f"Handbook demo: http://{args.host}:{args.port}")
+    source = _source(args.source)
+    app = create_app(source, args.runs)
+    print(f"Ask the documents: http://{args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
+def _source(explicit: str | None) -> str:
+    return explicit or configured_source()
+
+
+def _generator() -> str:
+    return os.environ.get("AUTORAG_GENERATOR") or configured_generator(load_settings())
 
 
 def _config_for(source: str, runs: str, variant: str):

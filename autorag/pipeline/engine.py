@@ -69,11 +69,7 @@ def build_bundle(documents: list[Document], config: PipelineConfig, embedder: Em
     chunks = chunk_documents(documents, config)
     texts = [chunk.text for chunk in chunks]
     vectors = embedder.embed_documents(texts) if texts else np.zeros((0, 1), dtype=np.float32)
-    backend = os.environ.get("AUTORAG_INDEX", "local")
-    chroma_path = os.environ.get("AUTORAG_CHROMA_PATH", "runs/chroma")
-    index = build_vector_index(chunks, vectors, backend=backend, path=chroma_path)
-    # Retrieval uses the normalized matrix held by the local index. Chroma keeps
-    # the same matrix on ``.vectors`` so BM25 fusion can still see every chunk.
+    index = build_vector_index(chunks, vectors)
     return Bundle(
         config=config,
         chunks=index.chunks,

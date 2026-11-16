@@ -16,17 +16,29 @@ function setStatus(text, kind) {
   statusEl.className = "status" + (kind ? " " + kind : "");
 }
 
+function applyTitle(body) {
+  if (!body || !body.title) return;
+  document.title = body.title;
+  const product = document.querySelector("#product-name");
+  const eyebrow = document.querySelector("#eyebrow");
+  const headline = document.querySelector("#headline");
+  if (product) product.textContent = body.title;
+  if (eyebrow) eyebrow.textContent = body.source || "Documents";
+  if (headline) headline.textContent = "Ask " + body.title;
+}
+
 async function pollHealth() {
   try {
     const response = await fetch("/health");
     const body = await response.json();
+    applyTitle(body);
     if (response.status === 503 || body.status === "loading") {
-      setStatus("Indexing the handbook…");
+      setStatus("Indexing the documents…");
       setTimeout(pollHealth, 700);
       return;
     }
     if (!response.ok) {
-      setStatus(body.detail || "The handbook failed to index.", "error");
+      setStatus(body.detail || "The documents failed to index.", "error");
       return;
     }
     ready = true;
@@ -34,7 +46,7 @@ async function pollHealth() {
     setStatus(label, "ready");
     askBtn.disabled = false;
   } catch (error) {
-    setStatus("Cannot reach the handbook service.", "error");
+    setStatus("Cannot reach the service.", "error");
   }
 }
 
@@ -90,7 +102,7 @@ async function submitQuestion(question) {
   if (!question) return;
   if (!ready) {
     answerEl.className = "answer";
-    answerEl.innerHTML = '<p class="empty-copy">Still indexing the handbook. Try again in a moment.</p>';
+    answerEl.innerHTML = '<p class="empty-copy">Still indexing the documents. Try again in a moment.</p>';
     return;
   }
   lastQuestion = question;
@@ -98,7 +110,7 @@ async function submitQuestion(question) {
   markChip(question);
   askBtn.disabled = true;
   answerEl.className = "answer";
-  answerEl.innerHTML = '<p class="empty-copy">Looking through the handbook…</p>';
+  answerEl.innerHTML = '<p class="empty-copy">Looking through the documents…</p>';
   try {
     const response = await fetch("/ask", {
       method: "POST",
@@ -112,7 +124,7 @@ async function submitQuestion(question) {
     }
     renderAnswer(body);
   } catch (error) {
-    renderError("The handbook service didn’t respond.");
+    renderError("The service didn’t respond.");
   } finally {
     askBtn.disabled = false;
   }
@@ -126,7 +138,7 @@ function renderError(message) {
 
 function renderAnswer(body) {
   answerEl.className = body.refused ? "answer refused" : "answer";
-  const kicker = body.refused ? "Not in the handbook" : "From the handbook";
+  const kicker = body.refused ? "Not in the documents" : "From the documents";
   const percent = Math.round((body.confidence || 0) * 100);
   const citations = (body.citations || [])
     .map((citation) => {

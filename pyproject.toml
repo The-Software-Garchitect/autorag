@@ -22,7 +22,6 @@ dev = ["pytest>=8", "ruff>=0.8"]
 local = ["sentence-transformers>=3"]
 # ONNX MiniLM. Used by the demo container and the free-host image.
 lite = ["fastembed>=0.4"]
-chroma = ["chromadb>=0.5"]
 
 [project.scripts]
 autorag = "autorag.cli:main"
