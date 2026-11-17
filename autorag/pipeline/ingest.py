@@ -13,7 +13,14 @@ import yaml
 
 from autorag.models import Document
 
-SKIP_NAMES = {"eval.jsonl", "suggested.json", "tune_results.json"}
+SKIP_NAMES = {
+    "eval.jsonl",
+    "suggested.json",
+    "tune_results.json",
+    "results.json",
+    "README.md",
+    "readme.md",
+}
 TEXT_SUFFIXES = {".md", ".markdown", ".txt"}
 
 

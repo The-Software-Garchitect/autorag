@@ -13,6 +13,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from autorag.claims.check import check_claim, load_claim_pipeline, load_verdict_thresholds
+from autorag.claims.verdict import select_verifier
 from autorag.config import (
     PipelineConfig,
     baseline_config,
@@ -36,6 +38,10 @@ class AskBody(BaseModel):
     variant: str = "best"
 
 
+class CheckClaimBody(BaseModel):
+    claim: str = Field(min_length=2)
+
+
 class FeedbackBody(BaseModel):
     question: str
     answer: str | None = None
@@ -57,6 +63,9 @@ class HandbookService:
         self.docs = []
         self.best_config = default_config()
         self.baseline_config = baseline_config()
+        self.claim_config = self.best_config
+        self.verdict_thresholds = load_verdict_thresholds(source)
+        self.verifier = select_verifier()
         self.title = configured_title(source, load_settings())
         self._bundles: dict[tuple, Bundle] = {}
         self._embedders: dict[tuple, object] = {}
@@ -75,6 +84,9 @@ class HandbookService:
                 self.best_config = PipelineConfig.from_dict(snapshot["best"]["config"])
                 if snapshot.get("baseline", {}).get("config"):
                     self.baseline_config = PipelineConfig.from_dict(snapshot["baseline"]["config"])
+            self.claim_config = load_claim_pipeline(self.source) or self.best_config
+            self.verdict_thresholds = load_verdict_thresholds(self.source)
+            self.verifier = select_verifier()
             override = os.environ.get("AUTORAG_GENERATOR") or configured_generator(load_settings())
             if override:
                 self.best_config.generator = override
@@ -83,6 +95,8 @@ class HandbookService:
                 self._warmup_lite()
             else:
                 self._bundle(self.best_config)
+                if self.claim_config.index_key() != self.best_config.index_key():
+                    self._bundle(self.claim_config)
             self.ready = True
         except Exception as exc:  # surface the message to /health
             self.error = str(exc)
@@ -95,13 +109,20 @@ class HandbookService:
         time with the ONNX MiniLM; startup just reads those files.
         """
         model = os.environ.get("AUTORAG_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-        for config in (self.best_config, self.baseline_config):
+        configs = []
+        seen: set[str] = set()
+        for config in (self.best_config, self.baseline_config, self.claim_config):
+            if config.name in seen:
+                continue
+            seen.add(config.name)
+            configs.append(config)
+        for config in configs:
             config.embedding_provider = "fastembed"
             config.embedding_model = model
         embedder = build_embedder("fastembed", model)
         self._embedders[("fastembed", model)] = embedder
         index_root = Path(self.source) / "index"
-        for config in (self.best_config, self.baseline_config):
+        for config in configs:
             directory = index_root / config.name
             if not (directory / "vectors.npy").exists():
                 raise RuntimeError(
@@ -123,6 +144,19 @@ class HandbookService:
         payload["variant"] = "baseline" if variant == "baseline" else "best"
         payload["config"] = config.name
         return payload
+
+    def check(self, claim: str) -> dict:
+        if self.error:
+            raise HTTPException(status_code=500, detail=self.error)
+        if not self.ready:
+            raise HTTPException(status_code=503, detail="The handbook is still indexing.")
+        bundle = self._bundle(self.claim_config)
+        return check_claim(
+            bundle,
+            claim,
+            verifier=self.verifier,
+            thresholds=self.verdict_thresholds,
+        )
 
     def runs_payload(self) -> dict:
         live = self.history.list_runs()
@@ -206,6 +240,10 @@ def create_app(source: str = "data/acme", runs_dir: str = "runs") -> FastAPI:
             "title": service.title,
             "source": service.source,
         }
+
+    @app.post("/check-claim")
+    def check_claim_route(body: CheckClaimBody):
+        return service.check(body.claim)
 
     @app.post("/ask")
     def ask(body: AskBody):

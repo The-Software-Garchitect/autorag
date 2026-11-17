@@ -17,7 +17,7 @@ import yaml
 @dataclass
 class PipelineConfig:
     name: str = "default"
-    chunk_strategy: str = "structure"  # "fixed" or "structure"
+    chunk_strategy: str = "structure"  # fixed | structure | sentence
     chunk_size: int = 360  # whitespace-separated words
     chunk_overlap: int = 60
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -25,6 +25,9 @@ class PipelineConfig:
     top_k: int = 5
     candidate_k: int = 24
     hybrid: bool = True
+    # Empty follows ``hybrid`` (vector-only when hybrid is off). ``bm25`` is the
+    # keyword-only retriever used by the claim-checking baseline.
+    retriever: str = ""  # "" | vector | bm25 | hybrid
     reranker: str = "lexical"  # off | lexical | cross-encoder
     recency_boost: bool = True
     generator: str = "extractive"  # extractive | ollama | openai | auto

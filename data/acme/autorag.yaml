@@ -1,1 +1,3 @@
 title: Acme Handbook
+# Tune on one part of the gold questions and publish scores on the rest.
+holdout: 0.2

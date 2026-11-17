@@ -9,9 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from autorag.config import PipelineConfig, search_space
 from autorag.eval.dataset import find_eval_path, load_eval_items, merge_feedback
 from autorag.eval.metrics import aggregate, score_question
+from autorag.eval.split import split_holdout
 from autorag.eval.synthetic import synthesize
 from autorag.models import Document, EvalItem
 from autorag.pipeline.embed import Embedder, build_embedder
@@ -31,6 +34,7 @@ def tune(
     feedback_rows: list[dict] | None = None,
     log=print,
     write_source_snapshot: bool = True,
+    holdout: float | None = None,
 ) -> dict:
     documents = load_corpus(source)
     if not documents:
@@ -43,6 +47,14 @@ def tune(
         log(f"Folded feedback into the eval set ({before} -> {len(items)} questions).")
     if limit and limit > 0:
         items = items[:limit]
+
+    fraction = resolve_holdout(source, holdout)
+    train_items, report_items = split_holdout(items, fraction) if fraction > 0 else (list(items), [])
+    if report_items:
+        log(
+            f"Holding out {len(report_items)} of {len(items)} questions. "
+            "The winner is chosen on the rest, then every config is scored on the held-out part."
+        )
 
     space = configs or search_space(embedding_model)
     for config in space:
@@ -58,14 +70,15 @@ def tune(
     champion_score = -1.0
     champion: dict | None = None
 
-    log(f"Tuning on {len(documents)} documents and {len(items)} questions ({len(space)} configs).")
+    scored_items = train_items if report_items else items
+    log(f"Tuning on {len(documents)} documents and {len(scored_items)} questions ({len(space)} configs).")
     try:
         for config in space:
             log(f"  [{config.name}] chunk={config.chunk_strategy}/{config.chunk_size} "
                 f"k={config.top_k} hybrid={config.hybrid} reranker={config.reranker} "
                 f"recency={config.recency_boost}")
             bundle = _cached_bundle(documents, config, cache, embedders)
-            report = _evaluate(bundle, items, generator)
+            report = _evaluate(bundle, scored_items, generator)
             promoted = report.composite > champion_score + 1e-4
             record = {
                 "id": new_run_id(config.name),
@@ -76,7 +89,7 @@ def tune(
                 "metrics": report.as_dict(),
                 "is_baseline": config.name == "baseline",
                 "promoted": promoted,
-                "question_count": len(items),
+                "question_count": len(scored_items),
                 "failures": report.failures,
             }
             if promoted:
@@ -90,7 +103,27 @@ def tune(
     finally:
         store.close()
 
-    payload = _snapshot(source, items, records, champion, eval_origin)
+    if report_items:
+        log(f"Scoring {len(report_items)} held-out questions. These numbers do not change which config is kept.")
+        for record in records:
+            config = PipelineConfig.from_dict(record["config"])
+            bundle = _cached_bundle(documents, config, cache, embedders)
+            report = _evaluate(bundle, report_items, generator)
+            record["selection_metrics"] = record["metrics"]
+            record["selection_count"] = record["question_count"]
+            record["metrics"] = report.as_dict()
+            record["question_count"] = len(report_items)
+            record["failures"] = report.failures
+
+    split = None
+    if report_items:
+        split = {
+            "train": len(train_items),
+            "holdout": len(report_items),
+            "fraction": fraction,
+            "scored_on": "holdout",
+        }
+    payload = _snapshot(source, items, records, champion, eval_origin, split)
     publish_snapshot(runs_path / "latest.json", payload)
     source_path = Path(source)
     if write_source_snapshot and source_path.is_dir():
@@ -168,10 +201,26 @@ def _evaluate(bundle: Bundle, items: list[EvalItem], generator: str):
     return aggregate(items, scores, previews)
 
 
-def _snapshot(source, items, records, champion, eval_origin) -> dict:
+def resolve_holdout(source: str, explicit: float | None) -> float:
+    """CLI flag wins. Otherwise read ``holdout`` from ``<source>/autorag.yaml``."""
+    if explicit is not None:
+        fraction = float(explicit)
+    else:
+        path = Path(source) / "autorag.yaml"
+        fraction = 0.0
+        if path.exists():
+            loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            if isinstance(loaded, dict) and loaded.get("holdout") not in (None, ""):
+                fraction = float(loaded["holdout"])
+    if fraction < 0 or fraction >= 1:
+        raise ValueError("holdout must be in [0, 1)")
+    return fraction
+
+
+def _snapshot(source, items, records, champion, eval_origin, split: dict | None = None) -> dict:
     baseline = next(record for record in records if record["is_baseline"])
     best = champion or baseline
-    return {
+    payload = {
         "source": str(source),
         "eval": eval_origin,
         "question_count": len(items),
@@ -180,10 +229,13 @@ def _snapshot(source, items, records, champion, eval_origin) -> dict:
         "runs": [_brief(record) for record in records],
         "improvement": round(best["metrics"]["composite"] - baseline["metrics"]["composite"], 4),
     }
+    if split:
+        payload["split"] = split
+    return payload
 
 
 def _brief(record: dict) -> dict:
-    return {
+    brief = {
         "id": record["id"],
         "created_at": record["created_at"],
         "name": record["name"],
@@ -194,6 +246,10 @@ def _brief(record: dict) -> dict:
         "metrics": record["metrics"],
         "failures": record.get("failures") or [],
     }
+    if record.get("selection_metrics"):
+        brief["selection_metrics"] = record["selection_metrics"]
+        brief["selection_count"] = record.get("selection_count")
+    return brief
 
 
 def _public_snapshot(payload: dict) -> dict:
