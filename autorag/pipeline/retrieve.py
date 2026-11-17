@@ -87,10 +87,17 @@ def retrieve(question: str, chunks, vectors: np.ndarray, bm25: BM25Index, query_
     vector_scores = np.maximum(vectors @ query, 0.0)
     bm25_scores = bm25.scores(content_tokens(question))
 
-    if config.hybrid:
+    mode = (getattr(config, "retriever", "") or "").strip().lower()
+    if not mode:
+        mode = "hybrid" if config.hybrid else "vector"
+    if mode == "hybrid":
         base = _rrf(vector_scores, bm25_scores, config.rrf_k)
-    else:
+    elif mode == "bm25":
+        base = np.asarray(bm25_scores, dtype=np.float32)
+    elif mode == "vector":
         base = vector_scores
+    else:
+        raise ValueError(f"Unknown retriever: {mode}")
 
     multipliers = np.array(
         [status_multiplier(chunk.metadata.get("status"), config.recency_boost) for chunk in chunks],

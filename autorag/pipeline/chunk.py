@@ -22,15 +22,22 @@ def chunk_documents(documents: list[Document], config: PipelineConfig) -> list[C
     chunks: list[Chunk] = []
     for document in documents:
         if config.chunk_strategy == "fixed":
-            pieces = _fixed_pieces(document, config.chunk_size, config.chunk_overlap)
+            pieces = [(text, {}) for text in _fixed_pieces(document, config.chunk_size, config.chunk_overlap)]
         elif config.chunk_strategy == "structure":
-            pieces = _structure_pieces(document, config.chunk_size, config.chunk_overlap)
+            pieces = [(text, {}) for text in _structure_pieces(document, config.chunk_size, config.chunk_overlap)]
+        elif config.chunk_strategy == "sentence":
+            pieces = [
+                (text, {"sentence_index": index})
+                for index, text in enumerate(_sentence_pieces(document.text))
+            ]
         else:
             raise ValueError(f"Unknown chunk strategy: {config.chunk_strategy}")
-        for index, text in enumerate(pieces):
+        for index, (text, extra) in enumerate(pieces):
             cleaned = text.strip()
             if not cleaned:
                 continue
+            metadata = dict(document.metadata)
+            metadata.update(extra)
             chunks.append(
                 Chunk(
                     id=f"{document.id}:{index}",
@@ -39,10 +46,18 @@ def chunk_documents(documents: list[Document], config: PipelineConfig) -> list[C
                     text=cleaned,
                     index=index,
                     source=document.source,
-                    metadata=dict(document.metadata),
+                    metadata=metadata,
                 )
             )
     return chunks
+
+
+def _sentence_pieces(text: str) -> list[str]:
+    """One piece per blank-line paragraph, in order.
+
+    SciFact abstracts are written that way so piece 0 is abstract sentence 0.
+    """
+    return [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
 
 
 def _fixed_pieces(document: Document, size: int, overlap: int) -> list[str]:

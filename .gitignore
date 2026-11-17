@@ -16,3 +16,4 @@ runs/**
 *.sqlite
 *.sqlite-journal
 .autorag/
+examples/scifact/docs/

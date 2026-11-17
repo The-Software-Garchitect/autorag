@@ -61,3 +61,26 @@ def test_hybrid_search_finds_the_quiet_room(corpus_dir):
     answer = bundle.ask("What is the Austin office quiet room named?")
     assert "Cypress" in answer.answer
     assert answer.citations[0].doc_id == "rooms"
+
+
+def test_bm25_retriever_can_disagree_with_the_vector_ranking():
+    import numpy as np
+
+    from autorag.models import Chunk
+    from autorag.pipeline.retrieve import build_bm25, retrieve
+
+    chunks = [
+        Chunk(id="a:0", doc_id="a", title="A", text="alpha alpha alpha", index=0, source="a.md", metadata={}),
+        Chunk(id="b:0", doc_id="b", title="B", text="zebra", index=0, source="b.md", metadata={}),
+    ]
+    bm25 = build_bm25(chunks)
+    vectors = np.eye(2, dtype=np.float32)
+    query = np.array([1.0, 0.0], dtype=np.float32)
+    keyword = PipelineConfig(
+        retriever="bm25", hybrid=False, reranker="off", top_k=1, candidate_k=2, recency_boost=False
+    )
+    vector = PipelineConfig(
+        retriever="vector", hybrid=False, reranker="off", top_k=1, candidate_k=2, recency_boost=False
+    )
+    assert retrieve("zebra", chunks, vectors, bm25, query, keyword)[0].chunk.doc_id == "b"
+    assert retrieve("zebra", chunks, vectors, bm25, query, vector)[0].chunk.doc_id == "a"

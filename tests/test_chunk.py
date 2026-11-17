@@ -35,6 +35,26 @@ Intro paragraph that explains the table is authoritative.
     assert "220" in chicago
 
 
+def test_sentence_chunks_keep_blank_line_order(tmp_path):
+    (tmp_path / "paper.md").write_text(
+        """---
+id: "7"
+title: Fever
+---
+
+Alpha lowers fever.
+
+Beta does not.
+""",
+        encoding="utf-8",
+    )
+    docs = load_corpus(str(tmp_path))
+    chunks = chunk_documents(docs, PipelineConfig(chunk_strategy="sentence", chunk_size=20))
+    assert [chunk.metadata["sentence_index"] for chunk in chunks] == [0, 1]
+    assert chunks[0].text == "Alpha lowers fever."
+    assert chunks[1].doc_id == "7"
+
+
 def test_fixed_windows_can_split_a_table(tmp_path):
     row = "| Chicago | $220 | a long note about downtown hotels near the river and the travel desk booking rule |"
     body = "\n".join(["| City | Lodging | Notes |", "| --- | --- | --- |"] + [row] * 8)

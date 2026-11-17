@@ -4,7 +4,7 @@ Numbers below are from `data/acme/tune_results.json` unless the sentence says Ha
 
 ## 30 seconds
 
-I point this at a folder of documents. It answers questions by quoting the page, and it tries several ways of cutting and searching those pages. It keeps a new way only when the score on a set of known questions goes up. On the fake Acme handbook, "PTO after 3 years" went from the five-year line in the 2025 policy, 25 days, to the three-year line in that same policy, 22 days. The score went from 0.8968 to 0.9435.
+I point this at a folder of documents. The headline task is a claim: does the folder support it, refute it, or not say enough? The same program still answers handbook questions by quoting the page. It tries several ways of cutting and searching, and it keeps a new way only when the score goes up on questions it will not be judged on. On SciFact, that judgment is the dev split. On the fake Acme handbook, 125 of 623 questions are held out. "PTO after 3 years" still moves from the five-year line, 25 days, to the three-year line, 22 days. The held-out score goes from 0.8887 to 0.9405.
 
 ## Two minutes
 
@@ -28,11 +28,13 @@ The failure is quiet. You still get a fluent sentence. It is just the old policy
 
 ## How do you know it works?
 
-There is a file of 623 questions with the right answer and the page it lives on. Thirty-seven of them are disagreements between an old page and a new page. Those went from 0.5482 to 1.0. Table questions went from 0.2528 to 0.9710. Questions the handbook cannot answer were refused every time. I would not hide the weak spot: questions that need two pages only moved from 0.5814 to 0.5920, because quoting one sentence is a bad way to join two policies.
+There is a file of 623 questions with the right answer and the page it lives on. The tuner sees 498. The numbers I quote are the other 125. Seven held-out conflict questions, old page versus new page, went from 0.3000 to 1.0. Eight table questions went from 0.3687 to 0.8882. Three questions that need two pages stayed at 0.4921, because quoting one sentence is a bad way to join two policies. Those three slices are small, so I trust the composite more than any one of them. Questions the handbook cannot answer were refused every time.
 
-The questions were generated from the same sentences as the pages. Acme is synthetic. That makes the test easier than a real intranet where the answer is only implied. Harbor Kitchen's twelve questions were generated the same way, which is why a dumb setup already scored 0.96.
+The handbook questions were generated from the same sentences as the pages. Acme is synthetic. That makes the test easier than a real intranet where the answer is only implied. Holding out 125 questions does not fix that. It only stops the tuner from picking a setup because it memorized those particular questions. An older run that scored every question it tuned on went from 0.8968 to 0.9435. This run, judged on the held-out 125, goes from 0.8887 to 0.9405. Hybrid was kept because it won on the 498 (0.9442 versus 0.9422 for structure). On the 125, structure is 0.9412 and hybrid is 0.9405. I did not switch the winner after looking.
 
-An earlier tune, before a small wording change in the scorer, went from 0.9018 to 0.9474 with the same winning setup. After the change the run is 0.8968 to 0.9435. I re-ran it rather than keep the old table.
+SciFact is the check that is not synthetic. Expert claims, real abstracts, train for the search, dev for the report. On the 300 dev claims the BM25-plus-majority baseline scores accuracy 0.4133 and macro-F1 0.1950. Hybrid search plus the small NLI model scores accuracy 0.4667 and macro-F1 0.4676. Abstract recall@5 goes from 0.7420 to 0.8269. Sentence recall@5 goes from 0.4117 to 0.5429. A claim takes 0.1964 seconds. The plain-language reading of those metrics is in the section below, and the table is in the README.
+
+Harbor Kitchen's twelve questions were generated the same way as Acme, which is why a dumb setup already scored 0.96.
 
 ## How does it adapt to a new company?
 
@@ -40,19 +42,39 @@ I do not edit code. I point `--source` at their folder, or I change the one `sou
 
 ## What would you do next?
 
-1. Have someone who has not seen the source sentences write fifty questions, and publish that score next to this one.
+1. Run the claim checker on full papers, not only abstracts. SciFact already shows what the abstract-only ceiling looks like: dev macro-F1 0.4676 against a majority baseline of 0.1950.
 2. Teach the quoter to use two sentences when the question clearly needs two facts. That is the flat part of the score.
 3. Require a real margin before a setup replaces the current one, so a 0.001 bump does not flip the winner.
 4. Put a login in front of the API before it sees a real company's files.
 
+## Why hold a split out?
+
+If the tuner and the scoreboard share every question, a setup can win by fitting those questions. The Acme file is split 498 / 125 by question type, with a fixed seed, before any config is scored. Promotion uses only the 498. Every config is then scored on the 125, and that is the table. SciFact is stricter: the dev file is not passed into the search function at all. Thresholds for the NLI verdict are a grid on train probabilities. Dev is one forward pass after the winner is frozen. The SciFact test split has no public labels, and the code never reads it.
+
+## What the claim metrics mean
+
+**Abstract recall@5** is the share of gold evidence abstracts that show up in the top 5 retrieved sentences' documents. Claims with no gold evidence (not enough information) are left out of that average, because an empty gold set would otherwise look perfect.
+
+**Sentence recall@5** is the same idea for the rationale sentences the experts marked.
+
+**Accuracy** is how often the verdict matches the label. **Macro-F1** averages F1 across supports, refutes, and not-enough-evidence, so a system that always says "supports" (the train majority, 332 of 809) cannot hide behind accuracy.
+
+**Latency** is seconds per dev claim, one claim at a time, after the models are loaded. It includes retrieval and the verdict.
+
+## Limitations
+
+SciFact's corpus is abstracts, not full papers. A claim can be true in the paper and still look like "not enough" from the abstract. The NLI model is `cross-encoder/nli-deberta-v3-small`. It is small and public, and it is not a domain expert. It needs PyTorch, which does not fit the 512 MB free host, so that host checks claims with word overlap and negation instead. The Acme questions were written from the same sentences they are scored on. Holding some out measures the search, not whether a stranger would have asked those questions.
+
 ## Score table
+
+Held-out Acme questions only.
 
 | Setup | Score | Right answers | Kept |
 | --- | ---: | ---: | --- |
-| baseline | 0.8968 | 0.8580 | starting point |
-| recency | 0.8952 | 0.8774 | no |
-| structure | 0.9420 | 0.9762 | yes |
-| hybrid | 0.9435 | 0.9801 | yes, best |
-| rerank | 0.9427 | 0.9772 | no |
-| wider-chunks | 0.9427 | 0.9772 | no |
-| high-k | 0.9297 | 0.9772 | no |
+| baseline | 0.8887 | 0.8504 | starting point |
+| recency | 0.8951 | 0.8779 | no |
+| structure | 0.9412 | 0.9727 | yes, then hybrid won the tune split |
+| hybrid | 0.9405 | 0.9727 | yes, kept |
+| rerank | 0.9380 | 0.9647 | no |
+| wider-chunks | 0.9380 | 0.9647 | no |
+| high-k | 0.9244 | 0.9647 | no |

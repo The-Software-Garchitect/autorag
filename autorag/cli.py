@@ -27,6 +27,12 @@ def main(argv: list[str] | None = None) -> None:
     tune_cmd.add_argument("--eval", default=None, help="Gold JSONL. Defaults to <source>/eval.jsonl")
     tune_cmd.add_argument("--runs", default="runs")
     tune_cmd.add_argument("--limit", type=int, default=0, help="Score at most this many questions (0 = all)")
+    tune_cmd.add_argument(
+        "--holdout",
+        type=float,
+        default=None,
+        help="Fraction of questions reserved for reporting. Defaults to holdout in <source>/autorag.yaml",
+    )
     tune_cmd.set_defaults(func=cmd_tune)
 
     ask_cmd = sub.add_parser("ask", help="Ask one question against the best saved config")
@@ -56,6 +62,24 @@ def main(argv: list[str] | None = None) -> None:
     eval_cmd.add_argument("--limit", type=int, default=0)
     eval_cmd.set_defaults(func=cmd_eval)
 
+    fetch_cmd = sub.add_parser("fetch", help="Download a public dataset into a local cache")
+    fetch_sub = fetch_cmd.add_subparsers(dest="dataset", required=True)
+    scifact_cmd = fetch_sub.add_parser("scifact", help="Allen AI SciFact claims and PubMed abstracts")
+    scifact_cmd.add_argument("--dest", default="examples/scifact")
+    scifact_cmd.set_defaults(func=cmd_fetch_scifact)
+
+    check_cmd = sub.add_parser("check-claim", help="Decide whether the corpus supports a claim")
+    check_cmd.add_argument("claim")
+    check_cmd.add_argument("--source", default=None)
+    check_cmd.add_argument("--runs", default="runs")
+    check_cmd.add_argument("--verifier", default="auto", choices=["auto", "nli", "extractive"])
+    check_cmd.set_defaults(func=cmd_check_claim)
+
+    claims_cmd = sub.add_parser("tune-claims", help="Select a claim checker on SciFact train and score dev")
+    claims_cmd.add_argument("--source", default="examples/scifact")
+    claims_cmd.add_argument("--out", default=None)
+    claims_cmd.set_defaults(func=cmd_tune_claims)
+
     args = parser.parse_args(argv)
     args.func(args)
 
@@ -75,6 +99,7 @@ def cmd_tune(args) -> None:
         generator=_generator(),
         limit=args.limit,
         feedback_rows=rows,
+        holdout=args.holdout,
     )
 
 
@@ -125,6 +150,36 @@ def cmd_synth(args) -> None:
     items = synthesize(documents, complete=complete)
     write_jsonl(args.out, [item.as_dict() for item in items])
     print(f"Wrote {len(items)} questions to {args.out}")
+
+
+def cmd_fetch_scifact(args) -> None:
+    from autorag.claims.fetch import fetch_scifact
+
+    summary = fetch_scifact(args.dest)
+    print(json.dumps(summary, indent=2))
+
+
+def cmd_check_claim(args) -> None:
+    from autorag.claims.check import check_claim, load_claim_pipeline, load_verdict_thresholds
+    from autorag.claims.verdict import select_verifier
+
+    source = _source(args.source)
+    documents = load_corpus(source)
+    config = load_claim_pipeline(source) or _config_for(source, args.runs, "best")
+    bundle = build_bundle(documents, config)
+    payload = check_claim(
+        bundle,
+        args.claim,
+        verifier=select_verifier(args.verifier),
+        thresholds=load_verdict_thresholds(source),
+    )
+    print(json.dumps(payload, indent=2))
+
+
+def cmd_tune_claims(args) -> None:
+    from autorag.claims.experiment import run_scifact_experiment
+
+    run_scifact_experiment(args.source, out=args.out)
 
 
 def cmd_serve(args) -> None:

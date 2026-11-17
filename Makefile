@@ -1,4 +1,4 @@
-.PHONY: install data test tune serve up report index lint
+.PHONY: install data data-scifact test tune serve up report index lint
 
 PORT ?= 8091
 PYTHON ?= python3
@@ -8,6 +8,9 @@ install:
 
 data:
 	$(PYTHON) scripts/generate_dataset.py
+
+data-scifact:
+	$(PYTHON) -m autorag fetch scifact
 
 index:
 	$(PYTHON) scripts/precompute_index.py
