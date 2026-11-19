@@ -71,3 +71,13 @@ Dev was scored once.
 
 Train label counts: supports 332, refutes 173, not enough evidence 304.
 Dev: supports 124, refutes 64, not enough evidence 112.
+
+The cuts, chosen on train only, are 0.45 to say supports and 0.65 to say refutes.
+Hybrid with 5 sentences won train macro-F1 at 0.4788. BM25 plus NLI scored 0.4305.
+Taking 8 sentences scored 0.4560. Dev was not used for that choice.
+
+| Dev label | How many | Precision | Recall | F1 |
+| --- | ---: | ---: | ---: | ---: |
+| supports | 124 | 0.7963 | 0.3468 | 0.4831 |
+| refutes | 64 | 0.3381 | 0.7344 | 0.4631 |
+| not enough evidence | 112 | 0.4673 | 0.4464 | 0.4566 |
